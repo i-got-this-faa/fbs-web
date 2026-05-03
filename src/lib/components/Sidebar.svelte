@@ -171,9 +171,7 @@
 		<div class="mt-1 flex items-center gap-3 rounded-lg px-3.5 py-1.5">
 			<span class="flex h-5 w-5 shrink-0 items-center justify-center">
 				<span
-					class="inline-block rounded-full {collapsed
-						? 'h-2 w-2'
-						: 'h-1.5 w-1.5'} {connection.useMock
+					class="inline-block h-2 w-2 rounded-full {connection.useMock
 						? 'bg-warning-500'
 						: connection.isConnected
 							? 'bg-success-500'
