@@ -93,12 +93,13 @@
 						id="token"
 						type="password"
 						bind:value={token}
-						required
 						placeholder="Enter your admin token"
 						class="w-full rounded-lg border border-surface-700 bg-surface-800 px-3.5 py-2.5 text-sm text-surface-100 placeholder-surface-600 transition-colors outline-none focus:border-accent-500 focus:ring-1 focus:ring-accent-500/30"
 					/>
 					<p class="mt-1 text-xs text-surface-600">
-						Your admin bearer token for the Management API
+						Leave empty if running in <code
+							class="rounded bg-surface-800 px-1 py-0.5 text-surface-400">--dev</code
+						> mode
 					</p>
 				</div>
 			</div>
@@ -116,7 +117,7 @@
 			<!-- Submit -->
 			<button
 				type="submit"
-				disabled={isTestingConnection || !apiUrl || !token}
+				disabled={isTestingConnection || !apiUrl}
 				class="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-accent-500/15 px-4 py-2.5 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25 disabled:cursor-not-allowed disabled:opacity-40"
 			>
 				{#if isTestingConnection}

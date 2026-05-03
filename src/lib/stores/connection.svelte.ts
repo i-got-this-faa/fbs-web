@@ -102,7 +102,7 @@ class ConnectionStore {
 			if (!raw) return;
 
 			const data = JSON.parse(raw) as SavedConnection;
-			if (data.apiUrl && data.token) {
+			if (data.apiUrl) {
 				this.apiUrl = data.apiUrl;
 				this.token = data.token;
 				// Re-connect silently in the background

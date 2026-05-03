@@ -8,41 +8,44 @@ import type {
 	ListObjectsOptions,
 	ObjectListing
 } from '$lib/types/api';
+import { parseListObjectsV2, parseS3ErrorMessage } from '$lib/utils/s3-xml';
 
+/**
+ * S3-compatible API client.
+ *
+ * Talks directly to the fbs-core S3 endpoints that exist today.
+ * Management API endpoints (keys, metrics, bucket listing) are stubbed
+ * and will be wired up once the management layer is built.
+ */
 export class FbsApiClient implements FbsClient {
 	constructor(
 		private baseUrl: string,
 		private token: string
 	) {}
 
-	private get headers(): HeadersInit {
-		return {
-			Authorization: `Bearer ${this.token}`,
-			'Content-Type': 'application/json'
-		};
+	private get authHeaders(): HeadersInit {
+		if (this.token) {
+			return { Authorization: `Bearer ${this.token}` };
+		}
+		return {};
 	}
 
-	private async request<T>(path: string, init?: RequestInit): Promise<T> {
+	private async s3Fetch(path: string, init?: RequestInit): Promise<Response> {
 		const url = `${this.baseUrl.replace(/\/$/, '')}${path}`;
-		const response = await fetch(url, {
+		return fetch(url, {
 			...init,
 			headers: {
-				...this.headers,
+				...this.authHeaders,
 				...(init?.headers ?? {})
 			}
 		});
+	}
 
-		if (!response.ok) {
-			const body = await response.text().catch(() => '');
-			throw new Error(`API ${response.status}: ${body || response.statusText}`);
-		}
-
-		// DELETE / no-content responses
-		if (response.status === 204 || response.headers.get('content-length') === '0') {
-			return undefined as T;
-		}
-
-		return response.json() as Promise<T>;
+	/** Throw a user-friendly error from an S3 XML error response */
+	private async throwS3Error(res: Response, fallback: string): Promise<never> {
+		const text = await res.text().catch(() => '');
+		const msg = parseS3ErrorMessage(text) || `${fallback} (HTTP ${res.status})`;
+		throw new Error(msg);
 	}
 
 	// ── Health ─────────────────────────────────────────────────────────────
@@ -56,74 +59,100 @@ export class FbsApiClient implements FbsClient {
 		}
 	}
 
-	// ── Buckets ────────────────────────────────────────────────────────────
-	async listBuckets(): Promise<Bucket[]> {
-		return this.request<Bucket[]>('/api/v1/buckets');
-	}
+	// ── Buckets (S3) ──────────────────────────────────────────────────────
 
+	/** S3 CreateBucket: PUT /{bucket} */
 	async createBucket(name: string): Promise<Bucket> {
-		return this.request<Bucket>('/api/v1/buckets', {
-			method: 'POST',
-			body: JSON.stringify({ name })
-		});
+		const res = await this.s3Fetch(`/${encodeURIComponent(name)}`, { method: 'PUT' });
+
+		if (!res.ok) {
+			await this.throwS3Error(res, 'Failed to create bucket');
+		}
+
+		return { name, ownerId: '', createdAt: new Date().toISOString() };
 	}
 
+	/**
+	 * Check if a bucket exists by issuing a zero-key ListObjectsV2 call.
+	 * Returns true if the bucket exists, false if it 404s.
+	 */
+	async bucketExists(name: string): Promise<boolean> {
+		try {
+			const res = await this.s3Fetch(`/${encodeURIComponent(name)}?list-type=2&max-keys=0`);
+			return res.ok;
+		} catch {
+			return false;
+		}
+	}
+
+	/** Not yet implemented — requires Management API */
+	async listBuckets(): Promise<Bucket[]> {
+		throw new Error('Management API not yet available');
+	}
+
+	/** Not yet implemented — requires Management API */
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	async deleteBucket(name: string): Promise<void> {
-		return this.request<void>(`/api/v1/buckets/${encodeURIComponent(name)}`, {
-			method: 'DELETE'
-		});
+		throw new Error('Management API not yet available');
 	}
 
-	// ── Objects ────────────────────────────────────────────────────────────
+	// ── Objects (S3) ──────────────────────────────────────────────────────
+
+	/** S3 ListObjectsV2: GET /{bucket}?list-type=2 */
 	async listObjects(bucket: string, opts?: ListObjectsOptions): Promise<ObjectListing> {
-		const params = new URLSearchParams();
+		const params = new URLSearchParams({ 'list-type': '2' });
 		if (opts?.prefix) params.set('prefix', opts.prefix);
 		if (opts?.startAfter) params.set('start-after', opts.startAfter);
 		if (opts?.maxKeys) params.set('max-keys', String(opts.maxKeys));
 		if (opts?.delimiter) params.set('delimiter', opts.delimiter);
 
-		const query = params.toString();
-		const path = `/api/v1/buckets/${encodeURIComponent(bucket)}/objects${query ? `?${query}` : ''}`;
-		return this.request<ObjectListing>(path);
+		const res = await this.s3Fetch(`/${encodeURIComponent(bucket)}?${params}`);
+
+		if (!res.ok) {
+			await this.throwS3Error(res, 'Failed to list objects');
+		}
+
+		const xml = await res.text();
+		return parseListObjectsV2(xml);
 	}
 
+	/** S3 DeleteObject: DELETE /{bucket}/{key} */
 	async deleteObject(bucket: string, key: string): Promise<void> {
-		return this.request<void>(
-			`/api/v1/buckets/${encodeURIComponent(bucket)}/objects/${encodeURIComponent(key)}`,
-			{ method: 'DELETE' }
-		);
-	}
-
-	// ── Keys ──────────────────────────────────────────────────────────────
-	async listKeys(): Promise<AccessKey[]> {
-		return this.request<AccessKey[]>('/api/v1/keys');
-	}
-
-	async createKey(data: CreateKeyRequest): Promise<CreateKeyResponse> {
-		return this.request<CreateKeyResponse>('/api/v1/keys', {
-			method: 'POST',
-			body: JSON.stringify(data)
+		const res = await this.s3Fetch(`/${encodeURIComponent(bucket)}/${encodeURI(key)}`, {
+			method: 'DELETE'
 		});
+
+		if (!res.ok && res.status !== 204) {
+			await this.throwS3Error(res, 'Failed to delete object');
+		}
+	}
+
+	// ── Keys (Management API — placeholder) ───────────────────────────────
+	async listKeys(): Promise<AccessKey[]> {
+		throw new Error('Management API not yet available');
+	}
+
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	async createKey(data: CreateKeyRequest): Promise<CreateKeyResponse> {
+		throw new Error('Management API not yet available');
 	}
 
 	async updateKey(
+		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		id: string,
+		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		data: Partial<Pick<AccessKey, 'displayName' | 'isActive'>>
 	): Promise<AccessKey> {
-		return this.request<AccessKey>(`/api/v1/keys/${encodeURIComponent(id)}`, {
-			method: 'PATCH',
-			body: JSON.stringify(data)
-		});
+		throw new Error('Management API not yet available');
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	async deleteKey(id: string): Promise<void> {
-		return this.request<void>(`/api/v1/keys/${encodeURIComponent(id)}`, {
-			method: 'DELETE'
-		});
+		throw new Error('Management API not yet available');
 	}
 
-	// ── Metrics ───────────────────────────────────────────────────────────
+	// ── Metrics (Management API — placeholder) ────────────────────────────
 	async getMetrics(): Promise<DashboardMetrics> {
-		return this.request<DashboardMetrics>('/api/v1/metrics');
+		throw new Error('Management API not yet available');
 	}
 }

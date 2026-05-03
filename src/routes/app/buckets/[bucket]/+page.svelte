@@ -80,7 +80,7 @@
 	{:else}
 		<div class="overflow-hidden rounded-xl border border-surface-800 bg-surface-900">
 			<div
-				class="grid grid-cols-[1fr_100px_120px_40px] gap-3 border-b border-surface-800 px-4 py-2.5 text-xs font-medium text-surface-500 uppercase"
+				class="grid grid-cols-[1fr_100px_120px_40px] items-center gap-3 border-b border-surface-800 px-4 py-2.5 text-xs font-medium text-surface-500 uppercase"
 			>
 				<span>Name</span><span class="text-right">Size</span><span class="text-right">Modified</span
 				><span></span>
@@ -96,8 +96,8 @@
 							>{folderName}/</span
 						>
 					</div>
-					<span class="text-right text-xs text-surface-600">—</span><span
-						class="text-right text-xs text-surface-600">—</span
+					<span class="self-center text-right text-xs text-surface-600">—</span><span
+						class="self-center text-right text-xs text-surface-600">—</span
 					><span></span>
 				</button>
 			{/each}
@@ -112,9 +112,13 @@
 							<p class="truncate text-xs text-surface-600">{obj.contentType}</p>
 						</div>
 					</div>
-					<span class="text-right text-sm text-surface-400">{formatBytes(obj.size)}</span>
-					<span class="text-right text-xs text-surface-500">{timeAgo(obj.updatedAt)}</span>
-					<div class="flex justify-end">
+					<span class="self-center text-right text-sm text-surface-400"
+						>{formatBytes(obj.size)}</span
+					>
+					<span class="self-center text-right text-xs text-surface-500"
+						>{timeAgo(obj.updatedAt)}</span
+					>
+					<div class="flex items-center justify-end">
 						<button
 							onclick={() => (deleteTarget = obj.key)}
 							class="rounded-md p-1 text-surface-600 opacity-0 group-hover:opacity-100 hover:text-danger-400"

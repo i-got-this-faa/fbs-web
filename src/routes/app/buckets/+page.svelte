@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { resolveRoute } from '$app/paths';
 	import { getBucketsContext } from '$lib/stores/buckets.svelte';
-	import { formatDate } from '$lib/utils/format';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import { onMount } from 'svelte';
@@ -9,10 +8,13 @@
 	const buckets = getBucketsContext();
 
 	let showCreateForm = $state(false);
+	let showAddForm = $state(false);
 	let newBucketName = $state('');
+	let existingBucketName = $state('');
 	let createError = $state<string | null>(null);
+	let addError = $state<string | null>(null);
 
-	let deleteTarget = $state<string | null>(null);
+	let removeTarget = $state<string | null>(null);
 
 	onMount(() => {
 		buckets.load();
@@ -39,10 +41,29 @@
 		}
 	}
 
-	async function handleDelete() {
-		if (!deleteTarget) return;
-		await buckets.remove(deleteTarget);
-		deleteTarget = null;
+	async function handleAdd(e: Event) {
+		e.preventDefault();
+		addError = null;
+
+		const name = existingBucketName.trim().toLowerCase();
+		if (!name) {
+			addError = 'Please enter a bucket name';
+			return;
+		}
+
+		const success = await buckets.addExisting(name);
+		if (success) {
+			existingBucketName = '';
+			showAddForm = false;
+		} else {
+			addError = buckets.error;
+		}
+	}
+
+	function handleRemove() {
+		if (!removeTarget) return;
+		buckets.removeFromList(removeTarget);
+		removeTarget = null;
 	}
 </script>
 
@@ -56,22 +77,64 @@
 		<div>
 			<h1 class="text-lg font-semibold tracking-tight text-surface-100">Buckets</h1>
 			<p class="mt-0.5 text-sm text-surface-500">
-				{buckets.count} bucket{buckets.count !== 1 ? 's' : ''} total
+				{buckets.count} bucket{buckets.count !== 1 ? 's' : ''} tracked
 			</p>
 		</div>
-		<button
-			onclick={() => {
-				showCreateForm = !showCreateForm;
-				createError = null;
-				newBucketName = '';
-			}}
-			class="rounded-lg bg-accent-500/15 px-3.5 py-2 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
-		>
-			{showCreateForm ? 'Cancel' : '+ Create Bucket'}
-		</button>
+		<div class="flex gap-2">
+			<button
+				onclick={() => {
+					showAddForm = !showAddForm;
+					showCreateForm = false;
+					addError = null;
+					existingBucketName = '';
+				}}
+				class="rounded-lg bg-surface-800/60 px-3.5 py-2 text-sm font-medium text-surface-300 transition-colors hover:bg-surface-800 hover:text-surface-100"
+			>
+				{showAddForm ? 'Cancel' : '+ Add Existing'}
+			</button>
+			<button
+				onclick={() => {
+					showCreateForm = !showCreateForm;
+					showAddForm = false;
+					createError = null;
+					newBucketName = '';
+				}}
+				class="rounded-lg bg-accent-500/15 px-3.5 py-2 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
+			>
+				{showCreateForm ? 'Cancel' : '+ Create Bucket'}
+			</button>
+		</div>
 	</div>
 
-	<!-- Create Form -->
+	<!-- Add Existing Bucket Form -->
+	{#if showAddForm}
+		<form onsubmit={handleAdd} class="rounded-xl border border-surface-800 bg-surface-900 p-5">
+			<h2 class="mb-1 text-sm font-semibold text-surface-200">Add Existing Bucket</h2>
+			<p class="mb-3 text-xs text-surface-500">
+				Enter the name of a bucket that already exists on the server.
+			</p>
+			<div class="flex gap-3">
+				<input
+					type="text"
+					bind:value={existingBucketName}
+					placeholder="my-existing-bucket"
+					required
+					class="flex-1 rounded-lg border border-surface-700 bg-surface-800 px-3.5 py-2 text-sm text-surface-100 placeholder-surface-600 transition-colors outline-none focus:border-accent-500"
+				/>
+				<button
+					type="submit"
+					class="rounded-lg bg-accent-500/15 px-4 py-2 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
+				>
+					Add
+				</button>
+			</div>
+			{#if addError}
+				<p class="mt-2 text-xs text-danger-400">{addError}</p>
+			{/if}
+		</form>
+	{/if}
+
+	<!-- Create Bucket Form -->
 	{#if showCreateForm}
 		<form onsubmit={handleCreate} class="rounded-xl border border-surface-800 bg-surface-900 p-5">
 			<h2 class="mb-3 text-sm font-semibold text-surface-200">New Bucket</h2>
@@ -97,7 +160,7 @@
 	{/if}
 
 	<!-- Error -->
-	{#if buckets.error && !createError}
+	{#if buckets.error && !createError && !addError}
 		<div class="rounded-xl border border-danger-500/20 bg-danger-500/5 p-4 text-sm text-danger-400">
 			{buckets.error}
 		</div>
@@ -106,23 +169,31 @@
 	<!-- Loading -->
 	{#if buckets.isLoading}
 		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-			{#each Array.from({ length: 6 }, (_, i) => i) as i (i)}
+			{#each Array.from({ length: 3 }, (_, i) => i) as i (i)}
 				<div class="h-24 animate-pulse rounded-xl border border-surface-800 bg-surface-900"></div>
 			{/each}
 		</div>
 	{:else if buckets.count === 0}
 		<EmptyState
 			icon="🪣"
-			title="No buckets yet"
-			description="Create your first bucket to start storing objects."
+			title="No buckets tracked"
+			description="Create a new bucket or add an existing one by name."
 		>
 			{#snippet action()}
-				<button
-					onclick={() => (showCreateForm = true)}
-					class="rounded-lg bg-accent-500/15 px-4 py-2 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
-				>
-					Create Bucket
-				</button>
+				<div class="flex gap-2">
+					<button
+						onclick={() => (showAddForm = true)}
+						class="rounded-lg bg-surface-800/60 px-4 py-2 text-sm font-medium text-surface-300 transition-colors hover:bg-surface-800 hover:text-surface-100"
+					>
+						Add Existing
+					</button>
+					<button
+						onclick={() => (showCreateForm = true)}
+						class="rounded-lg bg-accent-500/15 px-4 py-2 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
+					>
+						Create Bucket
+					</button>
+				</div>
 			{/snippet}
 		</EmptyState>
 	{:else}
@@ -133,7 +204,7 @@
 					href={resolveRoute('/app/buckets/[bucket]', { bucket: bucket.name })}
 					class="group rounded-xl border border-surface-800 bg-surface-900 p-4 transition-all duration-150 hover:border-surface-700 hover:shadow-lg hover:shadow-black/20"
 				>
-					<div class="flex items-start justify-between">
+					<div class="flex items-center justify-between">
 						<div class="flex items-center gap-2.5">
 							<div
 								class="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-500/10 text-accent-400 ring-1 ring-accent-500/20"
@@ -157,21 +228,18 @@
 								<p class="text-sm font-medium text-surface-200 group-hover:text-surface-100">
 									{bucket.name}
 								</p>
-								<p class="text-xs text-surface-500">
-									Created {formatDate(bucket.createdAt)}
-								</p>
 							</div>
 						</div>
 
-						<!-- Delete button (prevent navigation) -->
+						<!-- Remove from list button -->
 						<button
 							onclick={(e) => {
 								e.preventDefault();
 								e.stopPropagation();
-								deleteTarget = bucket.name;
+								removeTarget = bucket.name;
 							}}
 							class="rounded-md p-1.5 text-surface-600 opacity-0 transition-all group-hover:opacity-100 hover:bg-danger-500/10 hover:text-danger-400"
-							aria-label="Delete {bucket.name}"
+							aria-label="Remove {bucket.name} from list"
 						>
 							<svg
 								width="14"
@@ -183,9 +251,8 @@
 								stroke-linecap="round"
 								stroke-linejoin="round"
 							>
-								<path d="M3 6h18" />
-								<path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-								<path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+								<line x1="18" y1="6" x2="6" y2="18" />
+								<line x1="6" y1="6" x2="18" y2="18" />
 							</svg>
 						</button>
 					</div>
@@ -193,15 +260,23 @@
 			{/each}
 		</div>
 	{/if}
+
+	<!-- Info banner -->
+	<div class="rounded-lg border border-surface-800/50 bg-surface-900/50 px-4 py-3">
+		<p class="text-xs text-surface-500">
+			Bucket listing will auto-populate once the Management API is available. For now, add buckets
+			by name or create new ones.
+		</p>
+	</div>
 </div>
 
-<!-- Delete Confirmation -->
+<!-- Remove Confirmation -->
 <ConfirmDialog
-	open={deleteTarget !== null}
-	title="Delete Bucket"
-	description="Are you sure you want to delete &quot;{deleteTarget}&quot;? This will permanently remove all objects inside it."
-	confirmLabel="Delete Bucket"
-	destructive
-	onconfirm={handleDelete}
-	oncancel={() => (deleteTarget = null)}
+	open={removeTarget !== null}
+	title="Remove Bucket"
+	description="Remove &quot;{removeTarget}&quot; from your tracked list? This does not delete the bucket or its data from the server."
+	confirmLabel="Remove"
+	destructive={false}
+	onconfirm={handleRemove}
+	oncancel={() => (removeTarget = null)}
 />

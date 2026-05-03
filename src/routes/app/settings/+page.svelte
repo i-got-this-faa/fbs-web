@@ -12,9 +12,11 @@
 	}
 
 	const maskedToken = $derived(
-		connection.token.length > 8
-			? connection.token.slice(0, 4) + '····' + connection.token.slice(-4)
-			: '····'
+		connection.token
+			? connection.token.length > 8
+				? connection.token.slice(0, 4) + '····' + connection.token.slice(-4)
+				: '····'
+			: 'None (dev mode)'
 	);
 
 	const connectionMode = $derived(connection.useMock ? 'Mock (Dev)' : 'Live');
