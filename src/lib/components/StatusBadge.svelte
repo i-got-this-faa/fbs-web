@@ -11,9 +11,9 @@
 			case 'connected':
 				return {
 					label: status,
-					bg: 'bg-accent-500/15',
-					text: 'text-accent-400',
-					dot: 'bg-accent-500'
+					bg: 'bg-success-500/15',
+					text: 'text-success-400',
+					dot: 'bg-success-500'
 				};
 			case 'inactive':
 			case 'disconnected':

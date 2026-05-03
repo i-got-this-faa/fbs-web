@@ -10,7 +10,7 @@
 	const { label, value, subtext, icon = 'bucket', accentColor = 'emerald' }: Props = $props();
 
 	const colorMap = {
-		emerald: { bg: 'bg-accent-500/10', text: 'text-accent-400', ring: 'ring-accent-500/20' },
+		emerald: { bg: 'bg-success-500/10', text: 'text-success-400', ring: 'ring-success-500/20' },
 		blue: { bg: 'bg-info-500/10', text: 'text-info-400', ring: 'ring-info-500/20' },
 		amber: { bg: 'bg-warning-500/10', text: 'text-warning-400', ring: 'ring-warning-500/20' },
 		rose: { bg: 'bg-danger-500/10', text: 'text-danger-400', ring: 'ring-danger-500/20' }

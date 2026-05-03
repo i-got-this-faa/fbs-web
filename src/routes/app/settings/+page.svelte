@@ -48,8 +48,8 @@
 			<div class="flex items-center justify-between">
 				<span class="text-surface-500">Status</span>
 				{#if connection.isConnected}
-					<span class="flex items-center gap-1.5 text-accent-400">
-						<span class="inline-block h-1.5 w-1.5 rounded-full bg-accent-500"></span>
+					<span class="flex items-center gap-1.5 text-success-400">
+						<span class="inline-block h-1.5 w-1.5 rounded-full bg-success-500"></span>
 						Connected
 					</span>
 				{:else}

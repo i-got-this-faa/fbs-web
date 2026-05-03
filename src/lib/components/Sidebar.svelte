@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { getConnectionContext } from '$lib/stores/connection.svelte';
+	import Logo from './Logo.svelte';
 
 	interface NavItem {
 		label: string;
@@ -36,25 +37,8 @@
 	<!-- Logo -->
 	<div class="flex h-14 items-center border-b border-surface-800 px-4">
 		<a href="/app" class="flex items-center gap-2.5" onclick={() => onnavigate?.()}>
-			<div
-				class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-500/15 text-accent-400"
-			>
-				<svg
-					width="18"
-					height="18"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2.5"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-				>
-					<path
-						d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"
-					/>
-					<polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-					<line x1="12" y1="22.08" x2="12" y2="12" />
-				</svg>
+			<div class="h-8 w-8 shrink-0 overflow-hidden rounded-lg">
+				<Logo />
 			</div>
 			{#if !collapsed}
 				<span class="text-sm font-semibold tracking-tight text-surface-100">FBS</span>
@@ -171,7 +155,7 @@
 					class="inline-block h-1.5 w-1.5 rounded-full {connection.useMock
 						? 'bg-warning-500'
 						: connection.isConnected
-							? 'bg-accent-500'
+							? 'bg-success-500'
 							: 'bg-danger-500'}"
 				></span>
 				<span>
@@ -188,7 +172,7 @@
 					class="inline-block h-2 w-2 rounded-full {connection.useMock
 						? 'bg-warning-500'
 						: connection.isConnected
-							? 'bg-accent-500'
+							? 'bg-success-500'
 							: 'bg-danger-500'}"
 				></span>
 			</div>
