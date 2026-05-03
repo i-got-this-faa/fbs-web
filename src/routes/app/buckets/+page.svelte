@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { resolveRoute } from '$app/paths';
 	import { getBucketsContext } from '$lib/stores/buckets.svelte';
+	import { getPageActionsContext } from '$lib/stores/page-actions.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 
 	const buckets = getBucketsContext();
+	const pageActions = getPageActionsContext();
 
 	let showCreateForm = $state(false);
 	let showAddForm = $state(false);
@@ -18,6 +20,11 @@
 
 	onMount(() => {
 		buckets.load();
+		pageActions.setActions(topBarActions);
+	});
+
+	onDestroy(() => {
+		pageActions.clearActions();
 	});
 
 	async function handleCreate(e: Event) {
@@ -67,45 +74,36 @@
 	}
 </script>
 
+{#snippet topBarActions()}
+	<button
+		onclick={() => {
+			showAddForm = !showAddForm;
+			showCreateForm = false;
+			addError = null;
+			existingBucketName = '';
+		}}
+		class="rounded-lg bg-surface-800/60 px-3.5 py-1.5 text-sm font-medium text-surface-300 transition-colors hover:bg-surface-800 hover:text-surface-100"
+	>
+		{showAddForm ? 'Cancel' : '+ Add Existing'}
+	</button>
+	<button
+		onclick={() => {
+			showCreateForm = !showCreateForm;
+			showAddForm = false;
+			createError = null;
+			newBucketName = '';
+		}}
+		class="rounded-lg bg-accent-500/15 px-3.5 py-1.5 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
+	>
+		{showCreateForm ? 'Cancel' : '+ Create Bucket'}
+	</button>
+{/snippet}
+
 <svelte:head>
 	<title>Buckets — FBS</title>
 </svelte:head>
 
 <div class="mx-auto max-w-5xl space-y-5">
-	<!-- Header -->
-	<div class="flex items-center justify-between">
-		<div>
-			<h1 class="text-lg font-semibold tracking-tight text-surface-100">Buckets</h1>
-			<p class="mt-0.5 text-sm text-surface-500">
-				{buckets.count} bucket{buckets.count !== 1 ? 's' : ''} tracked
-			</p>
-		</div>
-		<div class="flex gap-2">
-			<button
-				onclick={() => {
-					showAddForm = !showAddForm;
-					showCreateForm = false;
-					addError = null;
-					existingBucketName = '';
-				}}
-				class="rounded-lg bg-surface-800/60 px-3.5 py-2 text-sm font-medium text-surface-300 transition-colors hover:bg-surface-800 hover:text-surface-100"
-			>
-				{showAddForm ? 'Cancel' : '+ Add Existing'}
-			</button>
-			<button
-				onclick={() => {
-					showCreateForm = !showCreateForm;
-					showAddForm = false;
-					createError = null;
-					newBucketName = '';
-				}}
-				class="rounded-lg bg-accent-500/15 px-3.5 py-2 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
-			>
-				{showCreateForm ? 'Cancel' : '+ Create Bucket'}
-			</button>
-		</div>
-	</div>
-
 	<!-- Add Existing Bucket Form -->
 	{#if showAddForm}
 		<form onsubmit={handleAdd} class="rounded-xl border border-surface-800 bg-surface-900 p-5">

@@ -4,11 +4,6 @@
 <svelte:head><title>Access Keys — FBS</title></svelte:head>
 
 <div class="mx-auto max-w-5xl space-y-5">
-	<div>
-		<h1 class="text-lg font-semibold text-surface-100">Access Keys</h1>
-		<p class="mt-0.5 text-sm text-surface-500">Manage S3 API authentication keys</p>
-	</div>
-
 	<div class="rounded-xl border border-dashed border-surface-700 bg-surface-900/30 p-12">
 		<div class="flex flex-col items-center text-center">
 			<div class="mb-4 text-4xl opacity-30">🔑</div>

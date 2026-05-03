@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { getPageActionsContext } from '$lib/stores/page-actions.svelte';
 
 	const { onmenutoggle }: { onmenutoggle?: () => void } = $props();
+	const pageActions = getPageActionsContext();
 
 	/** Map route segments to human-readable labels */
 	const labelMap: Record<string, string> = {
@@ -82,4 +84,11 @@
 			<h2 class="text-sm font-medium text-surface-200">{pageTitle}</h2>
 		{/if}
 	</div>
+
+	<!-- Page-specific actions -->
+	{#if pageActions.actions}
+		<div class="flex items-center gap-2">
+			{@render pageActions.actions()}
+		</div>
+	{/if}
 </header>

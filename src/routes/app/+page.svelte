@@ -6,11 +6,6 @@
 </svelte:head>
 
 <div class="mx-auto max-w-5xl space-y-6">
-	<div>
-		<h1 class="text-lg font-semibold tracking-tight text-surface-100">Dashboard</h1>
-		<p class="mt-0.5 text-sm text-surface-500">Overview of your storage backend</p>
-	</div>
-
 	<!-- Quick Actions -->
 	<div class="grid gap-4 sm:grid-cols-2">
 		<a

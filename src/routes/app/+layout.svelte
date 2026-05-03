@@ -4,6 +4,7 @@
 	import TopBar from '$lib/components/TopBar.svelte';
 	import { setBucketsContext } from '$lib/stores/buckets.svelte';
 	import { setObjectsContext } from '$lib/stores/objects.svelte';
+	import { setPageActionsContext } from '$lib/stores/page-actions.svelte';
 
 	const { children } = $props();
 
@@ -12,6 +13,7 @@
 	// Set store contexts for all /app routes
 	setBucketsContext();
 	setObjectsContext();
+	setPageActionsContext();
 </script>
 
 <svelte:head>

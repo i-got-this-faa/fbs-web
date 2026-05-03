@@ -25,12 +25,6 @@
 <svelte:head><title>Settings — FBS</title></svelte:head>
 
 <div class="mx-auto max-w-5xl space-y-6">
-	<!-- Header -->
-	<div>
-		<h1 class="text-lg font-semibold tracking-tight text-surface-100">Settings</h1>
-		<p class="mt-0.5 text-sm text-surface-500">Manage your connection and preferences</p>
-	</div>
-
 	<!-- Connection Details -->
 	<div class="rounded-xl border border-surface-800 bg-surface-900 p-5">
 		<h2 class="mb-4 text-sm font-semibold text-surface-200">Connection Details</h2>

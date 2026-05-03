@@ -1,17 +1,37 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { getObjectsContext } from '$lib/stores/objects.svelte';
+	import { getPageActionsContext } from '$lib/stores/page-actions.svelte';
 	import { formatBytes, timeAgo, keyBasename, contentTypeIcon } from '$lib/utils/format';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import { onMount, onDestroy } from 'svelte';
 
 	const objects = getObjectsContext();
+	const pageActions = getPageActionsContext();
 	const bucketName = $derived(page.params.bucket);
 	let deleteTarget = $state<string | null>(null);
 
 	$effect(() => {
 		const b = bucketName;
 		if (b) objects.load(b);
+	});
+
+	// Push the "Up" button to the TopBar when inside a prefix
+	$effect(() => {
+		if (objects.currentPrefix) {
+			pageActions.setActions(topBarActions);
+		} else {
+			pageActions.clearActions();
+		}
+	});
+
+	onMount(() => {
+		// Actions will be set by the $effect above when currentPrefix changes
+	});
+
+	onDestroy(() => {
+		pageActions.clearActions();
 	});
 
 	async function handleDelete() {
@@ -21,44 +41,18 @@
 	}
 </script>
 
+{#snippet topBarActions()}
+	<button
+		onclick={() => objects.navigateUp()}
+		class="flex items-center gap-1.5 rounded-lg bg-surface-800/60 px-3 py-1.5 text-sm text-surface-400 hover:bg-surface-800 hover:text-surface-200"
+	>
+		← Up
+	</button>
+{/snippet}
+
 <svelte:head><title>{bucketName} — FBS</title></svelte:head>
 
 <div class="mx-auto max-w-5xl space-y-5">
-	<div class="flex items-center gap-1.5 text-sm">
-		<a href="/app/buckets" class="text-surface-500 hover:text-surface-300">Buckets</a>
-		<span class="text-surface-600">/</span>
-		{#each objects.breadcrumbs as crumb, i (crumb.prefix)}
-			{#if i > 0}<span class="text-surface-600">/</span>{/if}
-			{#if i === objects.breadcrumbs.length - 1}
-				<span class="font-medium text-surface-200">{crumb.label}</span>
-			{:else}
-				<button
-					onclick={() => objects.navigateToPrefix(crumb.prefix)}
-					class="text-surface-500 hover:text-surface-300">{crumb.label}</button
-				>
-			{/if}
-		{/each}
-	</div>
-
-	<div class="flex items-center justify-between">
-		<div>
-			<h1 class="text-lg font-semibold text-surface-100">{bucketName}</h1>
-			<p class="mt-0.5 text-sm text-surface-500">
-				{objects.currentPrefix
-					? `Prefix: ${objects.currentPrefix}`
-					: `Root · ${objects.totalItems} items`}
-			</p>
-		</div>
-		{#if objects.currentPrefix}
-			<button
-				onclick={() => objects.navigateUp()}
-				class="flex items-center gap-1.5 rounded-lg bg-surface-800/60 px-3 py-2 text-sm text-surface-400 hover:bg-surface-800 hover:text-surface-200"
-			>
-				← Up
-			</button>
-		{/if}
-	</div>
-
 	{#if objects.error}
 		<div class="rounded-xl border border-danger-500/20 bg-danger-500/5 p-4 text-sm text-danger-400">
 			{objects.error}
