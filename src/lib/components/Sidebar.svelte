@@ -9,8 +9,15 @@
 		icon: string;
 	}
 
-	const { collapsed = false, onnavigate }: { collapsed?: boolean; onnavigate?: () => void } =
-		$props();
+	const {
+		collapsed = false,
+		onnavigate,
+		ontogglecollapse
+	}: {
+		collapsed?: boolean;
+		onnavigate?: () => void;
+		ontogglecollapse?: () => void;
+	} = $props();
 
 	const connection = getConnectionContext();
 
@@ -30,7 +37,7 @@
 </script>
 
 <aside
-	class="flex h-full flex-col border-r border-surface-800 bg-surface-900 transition-all duration-200 {collapsed
+	class="flex h-full flex-col overflow-hidden border-r border-surface-800 bg-surface-900 transition-all duration-200 {collapsed
 		? 'w-16'
 		: 'w-56'}"
 >
@@ -40,9 +47,13 @@
 			<div class="h-8 w-8 shrink-0 overflow-hidden rounded-lg">
 				<Logo />
 			</div>
-			{#if !collapsed}
-				<span class="text-sm font-semibold tracking-tight text-surface-100">FBS</span>
-			{/if}
+			<span
+				class="overflow-hidden text-sm font-semibold tracking-tight whitespace-nowrap text-surface-100 transition-all duration-200 {collapsed
+					? 'w-0 opacity-0'
+					: 'w-auto opacity-100'}"
+			>
+				FBS
+			</span>
 		</a>
 	</div>
 
@@ -53,7 +64,7 @@
 			<a
 				href={item.href}
 				onclick={() => onnavigate?.()}
-				class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors
+				class="flex items-center gap-3 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors
 					{active
 					? 'bg-accent-500/10 text-accent-400'
 					: 'text-surface-400 hover:bg-surface-800 hover:text-surface-200'}"
@@ -108,9 +119,13 @@
 						</svg>
 					{/if}
 				</span>
-				{#if !collapsed}
-					<span>{item.label}</span>
-				{/if}
+				<span
+					class="overflow-hidden whitespace-nowrap transition-all duration-200 {collapsed
+						? 'w-0 opacity-0'
+						: 'w-auto opacity-100'}"
+				>
+					{item.label}
+				</span>
 			</a>
 		{/each}
 	</nav>
@@ -121,7 +136,7 @@
 		<a
 			href="/app/settings"
 			onclick={() => onnavigate?.()}
-			class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors
+			class="flex items-center gap-3 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors
 				{isSettingsActive
 				? 'bg-accent-500/10 text-accent-400'
 				: 'text-surface-400 hover:bg-surface-800 hover:text-surface-200'}"
@@ -143,39 +158,69 @@
 					<circle cx="12" cy="12" r="3" />
 				</svg>
 			</span>
-			{#if !collapsed}
-				<span>Settings</span>
-			{/if}
+			<span
+				class="overflow-hidden whitespace-nowrap transition-all duration-200 {collapsed
+					? 'w-0 opacity-0'
+					: 'w-auto opacity-100'}"
+			>
+				Settings
+			</span>
 		</a>
 
 		<!-- Connection indicator -->
-		{#if !collapsed}
-			<div class="mt-1 flex items-center gap-2 px-3 py-1.5 text-xs text-surface-500">
+		<div class="mt-1 flex items-center gap-3 rounded-lg px-3.5 py-1.5">
+			<span class="flex h-5 w-5 shrink-0 items-center justify-center">
 				<span
-					class="inline-block h-1.5 w-1.5 rounded-full {connection.useMock
+					class="inline-block rounded-full {collapsed
+						? 'h-2 w-2'
+						: 'h-1.5 w-1.5'} {connection.useMock
 						? 'bg-warning-500'
 						: connection.isConnected
 							? 'bg-success-500'
 							: 'bg-danger-500'}"
 				></span>
-				<span>
-					{connection.useMock
-						? 'Mock Mode'
-						: connection.isConnected
-							? connection.apiUrl
-							: 'Disconnected'}
-				</span>
-			</div>
-		{:else}
-			<div class="mt-1 flex justify-center py-1.5">
-				<span
-					class="inline-block h-2 w-2 rounded-full {connection.useMock
-						? 'bg-warning-500'
-						: connection.isConnected
-							? 'bg-success-500'
-							: 'bg-danger-500'}"
-				></span>
-			</div>
-		{/if}
+			</span>
+			<span
+				class="overflow-hidden text-xs whitespace-nowrap text-surface-500 transition-all duration-200 {collapsed
+					? 'w-0 opacity-0'
+					: 'w-auto opacity-100'}"
+			>
+				{connection.useMock
+					? 'Mock Mode'
+					: connection.isConnected
+						? connection.apiUrl
+						: 'Disconnected'}
+			</span>
+		</div>
+
+		<!-- Collapse toggle -->
+		<button
+			onclick={() => ontogglecollapse?.()}
+			class="mt-1 flex w-full items-center gap-3 rounded-lg px-3.5 py-2 text-xs font-medium text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-300"
+			aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+		>
+			<span class="flex h-5 w-5 shrink-0 items-center justify-center">
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					class="transition-transform duration-200 {collapsed ? 'rotate-180' : ''}"
+				>
+					<polyline points="15 18 9 12 15 6" />
+				</svg>
+			</span>
+			<span
+				class="overflow-hidden whitespace-nowrap transition-all duration-200 {collapsed
+					? 'w-0 opacity-0'
+					: 'w-auto opacity-100'}"
+			>
+				Collapse
+			</span>
+		</button>
 	</div>
 </aside>

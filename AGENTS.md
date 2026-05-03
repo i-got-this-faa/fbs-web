@@ -17,3 +17,4 @@ Project guidelines:
 - use descriptive names for variables, functions, and components to improve readability
 - keep functions small and focused on a single task
 - run `bun run lint` to check for linting errors, `bun run format`, and `bun run check` to check for errors after making changes
+- sidebar collapse: icons are centered via fixed `px-3.5` padding + `overflow-hidden` on the aside — never use conditional class swaps (e.g. `justify-center` vs `gap-3 px-4`) as non-animatable properties cause visual jumps during the transition

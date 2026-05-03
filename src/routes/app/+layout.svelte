@@ -9,6 +9,7 @@
 	const { children } = $props();
 
 	let sidebarOpen = $state(false);
+	let sidebarCollapsed = $state(false);
 
 	// Set store contexts for all /app routes
 	setBucketsContext();
@@ -24,7 +25,10 @@
 	<div class="flex h-screen overflow-hidden bg-surface-950">
 		<!-- Desktop sidebar (always visible at md+) -->
 		<div class="hidden md:block">
-			<Sidebar />
+			<Sidebar
+				collapsed={sidebarCollapsed}
+				ontogglecollapse={() => (sidebarCollapsed = !sidebarCollapsed)}
+			/>
 		</div>
 
 		<!-- Mobile sidebar overlay -->
