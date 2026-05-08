@@ -67,7 +67,7 @@
 		</div>
 	{/if}
 
-	<div class="grid gap-4 lg:grid-cols-[1fr_280px]">
+	<div class="grid items-start gap-4 lg:grid-cols-[1fr_280px]">
 		<div class="overflow-hidden rounded-xl border border-surface-800 bg-surface-900">
 			<div class="border-b border-surface-800 px-4 py-3">
 				<h2 class="text-sm font-semibold text-surface-200">Largest Buckets</h2>
