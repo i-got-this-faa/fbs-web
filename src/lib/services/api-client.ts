@@ -118,7 +118,13 @@ export class FbsApiClient implements FbsClient {
 	}
 
 	async deleteBucket(name: string): Promise<void> {
-		throw new Error(`Bucket deletion is not supported by this fbs-core management API (${name})`);
+		const res = await this.managementFetch(`/buckets/${encodeURIComponent(name)}`, {
+			method: 'DELETE'
+		});
+
+		if (!res.ok && res.status !== 204) {
+			await this.throwManagementError(res, 'Failed to delete bucket');
+		}
 	}
 
 	// ── Objects ──────────────────────────────────────────────────────────

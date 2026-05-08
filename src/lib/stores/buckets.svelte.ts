@@ -42,6 +42,20 @@ class BucketsStore {
 		}
 	}
 
+	async remove(name: string): Promise<boolean> {
+		const client = this.connection.client;
+		if (!client) return false;
+
+		try {
+			await client.deleteBucket(name);
+			this.items = this.items.filter((bucket) => bucket.name !== name);
+			return true;
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : 'Failed to delete bucket';
+			return false;
+		}
+	}
+
 	get count(): number {
 		return this.items.length;
 	}

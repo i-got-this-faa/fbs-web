@@ -1,5 +1,8 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { getBucketsContext } from '$lib/stores/buckets.svelte';
 	import { getObjectsContext } from '$lib/stores/objects.svelte';
 	import { getPageActionsContext } from '$lib/stores/page-actions.svelte';
 	import { formatBytes, timeAgo, keyBasename, contentTypeIcon } from '$lib/utils/format';
@@ -8,23 +11,20 @@
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import { onDestroy } from 'svelte';
 
+	const buckets = getBucketsContext();
 	const objects = getObjectsContext();
 	const pageActions = getPageActionsContext();
 	const bucketName = $derived(page.params.bucket);
 	let deleteTarget = $state<string | null>(null);
+	let deleteBucketOpen = $state(false);
 
 	$effect(() => {
 		const b = bucketName;
 		if (b) objects.load(b);
 	});
 
-	// Push the "Up" button to the TopBar when inside a prefix
 	$effect(() => {
-		if (objects.currentPrefix) {
-			pageActions.setActions(topBarActions);
-		} else {
-			pageActions.clearActions();
-		}
+		pageActions.setActions(topBarActions);
 	});
 
 	onDestroy(() => {
@@ -36,14 +36,33 @@
 		await objects.remove(deleteTarget);
 		deleteTarget = null;
 	}
+
+	async function handleDeleteBucket() {
+		const bucket = bucketName;
+		if (!bucket) return;
+
+		const success = await buckets.remove(bucket);
+		deleteBucketOpen = false;
+		if (success) {
+			await goto(resolve('/app/buckets'));
+		}
+	}
 </script>
 
 {#snippet topBarActions()}
+	{#if objects.currentPrefix}
+		<button
+			onclick={() => objects.navigateUp()}
+			class="flex items-center gap-1.5 rounded-lg bg-surface-800/60 px-3 py-1.5 text-sm text-surface-400 hover:bg-surface-800 hover:text-surface-200"
+		>
+			← Up
+		</button>
+	{/if}
 	<button
-		onclick={() => objects.navigateUp()}
-		class="flex items-center gap-1.5 rounded-lg bg-surface-800/60 px-3 py-1.5 text-sm text-surface-400 hover:bg-surface-800 hover:text-surface-200"
+		onclick={() => (deleteBucketOpen = true)}
+		class="rounded-lg bg-danger-500/15 px-3.5 py-1.5 text-sm font-medium text-danger-400 transition-colors hover:bg-danger-500/25"
 	>
-		← Up
+		Delete Bucket
 	</button>
 {/snippet}
 
@@ -53,6 +72,11 @@
 	{#if objects.error}
 		<div class="rounded-xl border border-danger-500/20 bg-danger-500/5 p-4 text-sm text-danger-400">
 			{objects.error}
+		</div>
+	{/if}
+	{#if buckets.error}
+		<div class="rounded-xl border border-danger-500/20 bg-danger-500/5 p-4 text-sm text-danger-400">
+			{buckets.error}
 		</div>
 	{/if}
 
@@ -151,4 +175,14 @@
 	destructive
 	onconfirm={handleDelete}
 	oncancel={() => (deleteTarget = null)}
+/>
+
+<ConfirmDialog
+	open={deleteBucketOpen}
+	title="Delete Bucket"
+	description="Delete &quot;{bucketName}&quot; and all objects inside it? This cannot be undone."
+	confirmLabel="Delete Bucket"
+	destructive
+	onconfirm={handleDeleteBucket}
+	oncancel={() => (deleteBucketOpen = false)}
 />
