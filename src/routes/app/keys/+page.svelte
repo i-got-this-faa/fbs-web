@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { getKeysContext } from '$lib/stores/keys.svelte';
 	import { getPageActionsContext } from '$lib/stores/page-actions.svelte';
@@ -192,10 +193,8 @@
 	{/if}
 
 	{#if keys.isLoading}
-		<div class="space-y-1">
-			{#each Array.from({ length: 5 }, (_, i) => i) as i (i)}
-				<div class="h-14 animate-pulse rounded-lg border border-surface-800 bg-surface-900"></div>
-			{/each}
+		<div class="rounded-xl border border-surface-800 bg-surface-900">
+			<LoadingSpinner label="Loading keys..." minHeight="12rem" />
 		</div>
 	{:else if keys.items.length === 0}
 		<EmptyState

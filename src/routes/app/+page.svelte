@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import MetricCard from '$lib/components/MetricCard.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import { getBucketsContext } from '$lib/stores/buckets.svelte';
 	import { getDashboardContext } from '$lib/stores/dashboard.svelte';
 	import { formatBytes, formatDate } from '$lib/utils/format';
@@ -34,10 +35,8 @@
 	{/if}
 
 	{#if dashboard.isLoading && !dashboard.metrics}
-		<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-			{#each Array.from({ length: 4 }, (_, i) => i) as i (i)}
-				<div class="h-36 animate-pulse rounded-xl border border-surface-800 bg-surface-900"></div>
-			{/each}
+		<div class="rounded-xl border border-surface-800 bg-surface-900">
+			<LoadingSpinner label="Loading dashboard..." minHeight="9rem" />
 		</div>
 	{:else if dashboard.metrics}
 		<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -76,11 +75,7 @@
 			</div>
 
 			{#if buckets.isLoading && buckets.items.length === 0}
-				<div class="space-y-1 p-3">
-					{#each Array.from({ length: 4 }, (_, i) => i) as i (i)}
-						<div class="h-11 animate-pulse rounded-lg bg-surface-800/60"></div>
-					{/each}
-				</div>
+				<LoadingSpinner label="Loading buckets..." minHeight="13rem" />
 			{:else if largestBuckets.length === 0}
 				<div class="p-6">
 					<EmptyState

@@ -3,6 +3,7 @@
 	import { getBucketsContext } from '$lib/stores/buckets.svelte';
 	import { getPageActionsContext } from '$lib/stores/page-actions.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import { formatBytes, formatDate } from '$lib/utils/format';
 	import { onDestroy, onMount } from 'svelte';
 
@@ -93,10 +94,8 @@
 	{/if}
 
 	{#if buckets.isLoading}
-		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-			{#each Array.from({ length: 3 }, (_, i) => i) as i (i)}
-				<div class="h-32 animate-pulse rounded-xl border border-surface-800 bg-surface-900"></div>
-			{/each}
+		<div class="rounded-xl border border-surface-800 bg-surface-900">
+			<LoadingSpinner label="Loading buckets..." minHeight="12rem" />
 		</div>
 	{:else if buckets.count === 0}
 		<EmptyState

@@ -5,6 +5,7 @@
 	import { formatBytes, timeAgo, keyBasename, contentTypeIcon } from '$lib/utils/format';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import { onDestroy } from 'svelte';
 
 	const objects = getObjectsContext();
@@ -56,10 +57,8 @@
 	{/if}
 
 	{#if objects.isLoading}
-		<div class="space-y-1">
-			{#each Array.from({ length: 8 }, (_, i) => i) as i (i)}<div
-					class="h-12 animate-pulse rounded-lg border border-surface-800 bg-surface-900"
-				></div>{/each}
+		<div class="rounded-xl border border-surface-800 bg-surface-900">
+			<LoadingSpinner label="Loading objects..." minHeight="14rem" />
 		</div>
 	{:else if objects.isEmpty}
 		<EmptyState
