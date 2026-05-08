@@ -2,6 +2,7 @@
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import Modal from '$lib/components/Modal.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { getKeysContext } from '$lib/stores/keys.svelte';
 	import { getPageActionsContext } from '$lib/stores/page-actions.svelte';
@@ -14,7 +15,7 @@
 	const keys = getKeysContext();
 	const pageActions = getPageActionsContext();
 
-	let showCreateForm = $state(false);
+	let showCreateModal = $state(false);
 	let displayName = $state('');
 	let role = $state<CreateKeyRequest['role']>('member');
 	let createError = $state<string | null>(null);
@@ -44,7 +45,7 @@
 		if (success) {
 			displayName = '';
 			role = 'member';
-			showCreateForm = false;
+			showCreateModal = false;
 		} else {
 			createError = keys.error;
 		}
@@ -63,19 +64,28 @@
 			if (copiedTarget === target) copiedTarget = null;
 		}, 1600);
 	}
+
+	function openCreateModal() {
+		showCreateModal = true;
+		createError = null;
+		displayName = '';
+		role = 'member';
+	}
+
+	function closeCreateModal() {
+		showCreateModal = false;
+		createError = null;
+		displayName = '';
+		role = 'member';
+	}
 </script>
 
 {#snippet topBarActions()}
 	<button
-		onclick={() => {
-			showCreateForm = !showCreateForm;
-			createError = null;
-			displayName = '';
-			role = 'member';
-		}}
+		onclick={openCreateModal}
 		class="rounded-lg bg-accent-500/15 px-3.5 py-1.5 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
 	>
-		{showCreateForm ? 'Cancel' : '+ Create Key'}
+		+ Create Key
 	</button>
 {/snippet}
 
@@ -155,37 +165,6 @@
 		</div>
 	{/if}
 
-	{#if showCreateForm}
-		<form onsubmit={handleCreate} class="rounded-xl border border-surface-800 bg-surface-900 p-5">
-			<h2 class="mb-4 text-sm font-semibold text-surface-200">Create Access Key</h2>
-			<div class="grid gap-3 md:grid-cols-[1fr_160px_auto]">
-				<input
-					type="text"
-					bind:value={displayName}
-					placeholder="Service or person name"
-					required
-					class="rounded-lg border border-surface-700 bg-surface-800 px-3.5 py-2 text-sm text-surface-100 placeholder-surface-600 outline-none focus:border-accent-500"
-				/>
-				<select
-					bind:value={role}
-					class="rounded-lg border border-surface-700 bg-surface-800 px-3.5 py-2 text-sm text-surface-100 outline-none focus:border-accent-500"
-				>
-					<option value="member">Member</option>
-					<option value="admin">Admin</option>
-				</select>
-				<button
-					type="submit"
-					class="rounded-lg bg-accent-500/15 px-4 py-2 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
-				>
-					Create
-				</button>
-			</div>
-			{#if createError}
-				<p class="mt-2 text-xs text-danger-400">{createError}</p>
-			{/if}
-		</form>
-	{/if}
-
 	{#if keys.error && !createError}
 		<div class="rounded-xl border border-danger-500/20 bg-danger-500/5 p-4 text-sm text-danger-400">
 			{keys.error}
@@ -204,7 +183,7 @@
 		>
 			{#snippet action()}
 				<button
-					onclick={() => (showCreateForm = true)}
+					onclick={openCreateModal}
 					class="rounded-lg bg-accent-500/15 px-4 py-2 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
 				>
 					Create Key
@@ -262,6 +241,65 @@
 		</div>
 	{/if}
 </div>
+
+<Modal
+	open={showCreateModal}
+	title="Create Access Key"
+	description="Generate a bearer token and SigV4 credentials for an API client."
+	onclose={closeCreateModal}
+>
+	<form onsubmit={handleCreate} class="space-y-4">
+		<div>
+			<label for="display-name" class="mb-1.5 block text-sm font-medium text-surface-300">
+				Display name
+			</label>
+			<input
+				id="display-name"
+				type="text"
+				bind:value={displayName}
+				placeholder="Service or person name"
+				required
+				class="w-full rounded-lg border border-surface-700 bg-surface-800 px-3.5 py-2 text-sm text-surface-100 placeholder-surface-600 outline-none focus:border-accent-500"
+			/>
+		</div>
+
+		<div>
+			<label for="key-role" class="mb-1.5 block text-sm font-medium text-surface-300">Role</label>
+			<select
+				id="key-role"
+				bind:value={role}
+				class="w-full rounded-lg border border-surface-700 bg-surface-800 px-3.5 py-2 text-sm text-surface-100 outline-none focus:border-accent-500"
+			>
+				<option value="member">Member</option>
+				<option value="admin">Admin</option>
+			</select>
+		</div>
+
+		{#if createError}
+			<p
+				class="rounded-lg border border-danger-500/20 bg-danger-500/5 px-3 py-2 text-sm text-danger-400"
+			>
+				{createError}
+			</p>
+		{/if}
+
+		<div class="flex justify-end gap-3 pt-2">
+			<button
+				type="button"
+				onclick={closeCreateModal}
+				class="rounded-lg px-4 py-2 text-sm font-medium text-surface-400 transition-colors hover:bg-surface-800 hover:text-surface-200"
+			>
+				Cancel
+			</button>
+			<button
+				type="submit"
+				class="rounded-lg bg-accent-500/15 px-4 py-2 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
+			>
+				Create Key
+			</button>
+		</div>
+	</form>
+</Modal>
 
 <ConfirmDialog
 	open={deleteTarget !== null}

@@ -61,7 +61,6 @@
 			<MetricCard
 				label="Access Keys"
 				value={dashboard.metrics.activeKeys.toLocaleString()}
-				subtext={`${dashboard.metrics.totalKeys.toLocaleString()} total`}
 				icon="key"
 				accentColor="rose"
 			/>

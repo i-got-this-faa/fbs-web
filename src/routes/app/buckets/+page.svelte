@@ -4,13 +4,14 @@
 	import { getPageActionsContext } from '$lib/stores/page-actions.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+	import Modal from '$lib/components/Modal.svelte';
 	import { formatBytes, formatDate } from '$lib/utils/format';
 	import { onDestroy, onMount } from 'svelte';
 
 	const buckets = getBucketsContext();
 	const pageActions = getPageActionsContext();
 
-	let showCreateForm = $state(false);
+	let showCreateModal = $state(false);
 	let newBucketName = $state('');
 	let createError = $state<string | null>(null);
 
@@ -38,23 +39,31 @@
 		const success = await buckets.create(name);
 		if (success) {
 			newBucketName = '';
-			showCreateForm = false;
+			showCreateModal = false;
 		} else {
 			createError = buckets.error;
 		}
+	}
+
+	function openCreateModal() {
+		showCreateModal = true;
+		createError = null;
+		newBucketName = '';
+	}
+
+	function closeCreateModal() {
+		showCreateModal = false;
+		createError = null;
+		newBucketName = '';
 	}
 </script>
 
 {#snippet topBarActions()}
 	<button
-		onclick={() => {
-			showCreateForm = !showCreateForm;
-			createError = null;
-			newBucketName = '';
-		}}
+		onclick={openCreateModal}
 		class="rounded-lg bg-accent-500/15 px-3.5 py-1.5 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
 	>
-		{showCreateForm ? 'Cancel' : '+ Create Bucket'}
+		+ Create Bucket
 	</button>
 {/snippet}
 
@@ -63,30 +72,6 @@
 </svelte:head>
 
 <div class="mx-auto max-w-5xl space-y-5">
-	{#if showCreateForm}
-		<form onsubmit={handleCreate} class="rounded-xl border border-surface-800 bg-surface-900 p-5">
-			<h2 class="mb-3 text-sm font-semibold text-surface-200">New Bucket</h2>
-			<div class="flex gap-3">
-				<input
-					type="text"
-					bind:value={newBucketName}
-					placeholder="my-bucket-name"
-					required
-					class="flex-1 rounded-lg border border-surface-700 bg-surface-800 px-3.5 py-2 text-sm text-surface-100 placeholder-surface-600 transition-colors outline-none focus:border-accent-500"
-				/>
-				<button
-					type="submit"
-					class="rounded-lg bg-accent-500/15 px-4 py-2 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
-				>
-					Create
-				</button>
-			</div>
-			{#if createError}
-				<p class="mt-2 text-xs text-danger-400">{createError}</p>
-			{/if}
-		</form>
-	{/if}
-
 	{#if buckets.error && !createError}
 		<div class="rounded-xl border border-danger-500/20 bg-danger-500/5 p-4 text-sm text-danger-400">
 			{buckets.error}
@@ -105,7 +90,7 @@
 		>
 			{#snippet action()}
 				<button
-					onclick={() => (showCreateForm = true)}
+					onclick={openCreateModal}
 					class="rounded-lg bg-accent-500/15 px-4 py-2 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
 				>
 					Create Bucket
@@ -164,3 +149,53 @@
 		</div>
 	{/if}
 </div>
+
+<Modal
+	open={showCreateModal}
+	title="Create Bucket"
+	description="Choose a globally unique bucket name for object storage."
+	onclose={closeCreateModal}
+>
+	<form onsubmit={handleCreate} class="space-y-4">
+		<div>
+			<label for="bucket-name" class="mb-1.5 block text-sm font-medium text-surface-300">
+				Bucket name
+			</label>
+			<input
+				id="bucket-name"
+				type="text"
+				bind:value={newBucketName}
+				placeholder="my-bucket-name"
+				required
+				class="w-full rounded-lg border border-surface-700 bg-surface-800 px-3.5 py-2 text-sm text-surface-100 placeholder-surface-600 transition-colors outline-none focus:border-accent-500"
+			/>
+			<p class="mt-1 text-xs text-surface-600">
+				Use 3-63 lowercase letters, numbers, hyphens, or periods.
+			</p>
+		</div>
+
+		{#if createError}
+			<p
+				class="rounded-lg border border-danger-500/20 bg-danger-500/5 px-3 py-2 text-sm text-danger-400"
+			>
+				{createError}
+			</p>
+		{/if}
+
+		<div class="flex justify-end gap-3 pt-2">
+			<button
+				type="button"
+				onclick={closeCreateModal}
+				class="rounded-lg px-4 py-2 text-sm font-medium text-surface-400 transition-colors hover:bg-surface-800 hover:text-surface-200"
+			>
+				Cancel
+			</button>
+			<button
+				type="submit"
+				class="rounded-lg bg-accent-500/15 px-4 py-2 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
+			>
+				Create Bucket
+			</button>
+		</div>
+	</form>
+</Modal>
