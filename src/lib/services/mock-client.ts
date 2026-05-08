@@ -189,6 +189,7 @@ const MOCK_KEYS: AccessKey[] = [
 		id: 'usr_001',
 		displayName: 'Admin User',
 		accessKeyId: 'AKFBS0001ADMIN',
+		sigV4AccessKeyId: 'FBSK0001ADMIN',
 		role: 'admin',
 		isActive: true,
 		createdAt: isoAgo(30),
@@ -198,6 +199,7 @@ const MOCK_KEYS: AccessKey[] = [
 		id: 'usr_002',
 		displayName: 'App Service',
 		accessKeyId: 'AKFBS0002SVCAPP',
+		sigV4AccessKeyId: 'FBSK0002SVCAPP',
 		role: 'member',
 		isActive: true,
 		createdAt: isoAgo(14),
@@ -207,6 +209,7 @@ const MOCK_KEYS: AccessKey[] = [
 		id: 'usr_003',
 		displayName: 'CI Pipeline',
 		accessKeyId: 'AKFBS0003CIPIPE',
+		sigV4AccessKeyId: 'FBSK0003CIPIPE',
 		role: 'member',
 		isActive: false,
 		createdAt: isoAgo(20),
@@ -231,7 +234,14 @@ export class MockFbsClient implements FbsClient {
 	// ── Buckets ────────────────────────────────────────────────────────────
 	async listBuckets(): Promise<Bucket[]> {
 		await delay();
-		return [...this.buckets];
+		return this.buckets.map((bucket) => {
+			const objects = this.objects.filter((object) => object.bucketName === bucket.name);
+			return {
+				...bucket,
+				objectCount: objects.length,
+				totalObjectBytes: objects.reduce((sum, object) => sum + object.size, 0)
+			};
+		});
 	}
 
 	async createBucket(name: string): Promise<Bucket> {
@@ -239,7 +249,13 @@ export class MockFbsClient implements FbsClient {
 		if (this.buckets.some((b) => b.name === name)) {
 			throw new Error(`Bucket "${name}" already exists`);
 		}
-		const bucket: Bucket = { name, ownerId: 'usr_001', createdAt: isoNow() };
+		const bucket: Bucket = {
+			name,
+			ownerId: 'usr_001',
+			createdAt: isoNow(),
+			objectCount: 0,
+			totalObjectBytes: 0
+		};
 		this.buckets.push(bucket);
 		return bucket;
 	}
@@ -316,6 +332,7 @@ export class MockFbsClient implements FbsClient {
 			id: randomId(),
 			displayName: data.displayName,
 			accessKeyId: `AKFBS${String(this.keys.length + 1).padStart(4, '0')}`,
+			sigV4AccessKeyId: `FBSK${String(this.keys.length + 1).padStart(4, '0')}`,
 			role: data.role,
 			isActive: true,
 			createdAt: isoNow(),
@@ -324,7 +341,11 @@ export class MockFbsClient implements FbsClient {
 		this.keys.push(key);
 		return {
 			key,
-			secretAccessKey: `sk_${crypto.randomUUID().replace(/-/g, '')}` // shown once
+			bearerToken: `AKFBS${crypto.randomUUID().replace(/-/g, '').slice(0, 20)}.${crypto.randomUUID().replace(/-/g, '')}`,
+			sigV4: {
+				accessKeyId: key.sigV4AccessKeyId,
+				secretKey: `fbs_${crypto.randomUUID().replace(/-/g, '')}`
+			}
 		};
 	}
 
@@ -355,6 +376,8 @@ export class MockFbsClient implements FbsClient {
 			totalBuckets: this.buckets.length,
 			totalObjects: this.objects.length,
 			totalStorageBytes: this.objects.reduce((sum, o) => sum + o.size, 0),
+			totalKeys: this.keys.length,
+			activeKeys: this.keys.filter((key) => key.isActive).length,
 			recentUploads: [...this.objects]
 				.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 				.slice(0, 5)

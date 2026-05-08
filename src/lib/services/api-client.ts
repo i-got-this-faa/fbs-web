@@ -6,16 +6,16 @@ import type {
 	DashboardMetrics,
 	FbsClient,
 	ListObjectsOptions,
-	ObjectListing
+	ObjectListing,
+	StorageObject
 } from '$lib/types/api';
-import { parseListObjectsV2, parseS3ErrorMessage } from '$lib/utils/s3-xml';
+import { parseS3ErrorMessage } from '$lib/utils/s3-xml';
 
 /**
- * S3-compatible API client.
+ * fbs-core API client.
  *
- * Talks directly to the fbs-core S3 endpoints that exist today.
- * Management API endpoints (keys, metrics, bucket listing) are stubbed
- * and will be wired up once the management layer is built.
+ * Uses the Management API for admin dashboard reads and key management,
+ * while keeping S3-compatible endpoints for bucket creation and object deletion.
  */
 export class FbsApiClient implements FbsClient {
 	constructor(
@@ -41,11 +41,27 @@ export class FbsApiClient implements FbsClient {
 		});
 	}
 
+	private async managementFetch(path: string, init?: RequestInit): Promise<Response> {
+		return this.s3Fetch(`/api/management${path}`, {
+			...init,
+			headers: {
+				Accept: 'application/json',
+				...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+				...(init?.headers ?? {})
+			}
+		});
+	}
+
 	/** Throw a user-friendly error from an S3 XML error response */
 	private async throwS3Error(res: Response, fallback: string): Promise<never> {
 		const text = await res.text().catch(() => '');
 		const msg = parseS3ErrorMessage(text) || `${fallback} (HTTP ${res.status})`;
 		throw new Error(msg);
+	}
+
+	private async throwManagementError(res: Response, fallback: string): Promise<never> {
+		const message = await readManagementErrorMessage(res);
+		throw new Error(message || `${fallback} (HTTP ${res.status})`);
 	}
 
 	// ── Health ─────────────────────────────────────────────────────────────
@@ -69,7 +85,13 @@ export class FbsApiClient implements FbsClient {
 			await this.throwS3Error(res, 'Failed to create bucket');
 		}
 
-		return { name, ownerId: '', createdAt: new Date().toISOString() };
+		return {
+			name,
+			ownerId: '',
+			createdAt: new Date().toISOString(),
+			objectCount: 0,
+			totalObjectBytes: 0
+		};
 	}
 
 	/**
@@ -85,40 +107,51 @@ export class FbsApiClient implements FbsClient {
 		}
 	}
 
-	/** Not yet implemented — requires Management API */
 	async listBuckets(): Promise<Bucket[]> {
-		throw new Error('Management API not yet available');
-	}
-
-	/** Not yet implemented — requires Management API */
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	async deleteBucket(name: string): Promise<void> {
-		throw new Error('Management API not yet available');
-	}
-
-	// ── Objects (S3) ──────────────────────────────────────────────────────
-
-	/** S3 ListObjectsV2: GET /{bucket}?list-type=2 */
-	async listObjects(bucket: string, opts?: ListObjectsOptions): Promise<ObjectListing> {
-		const params = new URLSearchParams({ 'list-type': '2' });
-		if (opts?.prefix) params.set('prefix', opts.prefix);
-		if (opts?.startAfter) params.set('start-after', opts.startAfter);
-		if (opts?.maxKeys) params.set('max-keys', String(opts.maxKeys));
-		if (opts?.delimiter) params.set('delimiter', opts.delimiter);
-
-		const res = await this.s3Fetch(`/${encodeURIComponent(bucket)}?${params}`);
-
+		const res = await this.managementFetch('/buckets');
 		if (!res.ok) {
-			await this.throwS3Error(res, 'Failed to list objects');
+			await this.throwManagementError(res, 'Failed to list buckets');
 		}
 
-		const xml = await res.text();
-		return parseListObjectsV2(xml);
+		const body = (await res.json()) as ManagementBucketsResponse;
+		return body.buckets.map(mapBucket);
+	}
+
+	async deleteBucket(name: string): Promise<void> {
+		throw new Error(`Bucket deletion is not supported by this fbs-core management API (${name})`);
+	}
+
+	// ── Objects ──────────────────────────────────────────────────────────
+
+	/** Management object list with prefix/delimiter cursor semantics */
+	async listObjects(bucket: string, opts?: ListObjectsOptions): Promise<ObjectListing> {
+		const params = new URLSearchParams();
+		if (opts?.prefix) params.set('prefix', opts.prefix);
+		if (opts?.startAfter) params.set('cursor', opts.startAfter);
+		if (opts?.maxKeys) params.set('limit', String(opts.maxKeys));
+		if (opts?.delimiter) params.set('delimiter', opts.delimiter);
+
+		const query = params.toString();
+		const res = await this.managementFetch(
+			`/buckets/${encodeURIComponent(bucket)}/objects${query ? `?${query}` : ''}`
+		);
+
+		if (!res.ok) {
+			await this.throwManagementError(res, 'Failed to list objects');
+		}
+
+		const body = (await res.json()) as ManagementObjectsResponse;
+		return {
+			objects: body.objects.map((object) => mapObject(body.bucket, object)),
+			commonPrefixes: body.common_prefixes,
+			isTruncated: body.is_truncated,
+			nextStartAfter: body.next_cursor || null
+		};
 	}
 
 	/** S3 DeleteObject: DELETE /{bucket}/{key} */
 	async deleteObject(bucket: string, key: string): Promise<void> {
-		const res = await this.s3Fetch(`/${encodeURIComponent(bucket)}/${encodeURI(key)}`, {
+		const res = await this.s3Fetch(`/${encodeURIComponent(bucket)}/${encodeObjectKeyPath(key)}`, {
 			method: 'DELETE'
 		});
 
@@ -127,32 +160,196 @@ export class FbsApiClient implements FbsClient {
 		}
 	}
 
-	// ── Keys (Management API — placeholder) ───────────────────────────────
+	// ── Keys (Management API) ────────────────────────────────────────────
 	async listKeys(): Promise<AccessKey[]> {
-		throw new Error('Management API not yet available');
+		const res = await this.managementFetch('/keys');
+		if (!res.ok) {
+			await this.throwManagementError(res, 'Failed to list keys');
+		}
+
+		const body = (await res.json()) as ManagementKeysResponse;
+		return body.keys.map(mapKey);
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	async createKey(data: CreateKeyRequest): Promise<CreateKeyResponse> {
-		throw new Error('Management API not yet available');
+		const res = await this.managementFetch('/keys', {
+			method: 'POST',
+			body: JSON.stringify({
+				display_name: data.displayName,
+				role: data.role
+			})
+		});
+		if (!res.ok) {
+			await this.throwManagementError(res, 'Failed to create key');
+		}
+
+		const body = (await res.json()) as ManagementCreateKeyResponse;
+		return {
+			key: mapKey(body.key),
+			bearerToken: body.bearer_token,
+			sigV4: {
+				accessKeyId: body.sigv4.access_key_id,
+				secretKey: body.sigv4.secret_key
+			}
+		};
 	}
 
 	async updateKey(
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		id: string,
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		data: Partial<Pick<AccessKey, 'displayName' | 'isActive'>>
 	): Promise<AccessKey> {
-		throw new Error('Management API not yet available');
+		throw new Error(
+			`Key updates are not supported by this fbs-core management API (${id}, ${Object.keys(data).join(', ')})`
+		);
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	async deleteKey(id: string): Promise<void> {
-		throw new Error('Management API not yet available');
+		const res = await this.managementFetch(`/keys/${encodeURIComponent(id)}`, {
+			method: 'DELETE'
+		});
+
+		if (!res.ok && res.status !== 204) {
+			await this.throwManagementError(res, 'Failed to delete key');
+		}
 	}
 
-	// ── Metrics (Management API — placeholder) ────────────────────────────
+	// ── Metrics (Management API) ─────────────────────────────────────────
 	async getMetrics(): Promise<DashboardMetrics> {
-		throw new Error('Management API not yet available');
+		const res = await this.managementFetch('/metrics');
+		if (!res.ok) {
+			await this.throwManagementError(res, 'Failed to load metrics');
+		}
+
+		const body = (await res.json()) as ManagementMetricsResponse;
+		return {
+			totalBuckets: body.bucket_count,
+			totalObjects: body.object_count,
+			totalStorageBytes: body.total_object_bytes,
+			totalKeys: body.user_count,
+			activeKeys: body.active_user_count,
+			recentUploads: []
+		};
 	}
+}
+
+interface ManagementErrorResponse {
+	error?: {
+		message?: string;
+	};
+}
+
+interface ManagementMetricsResponse {
+	bucket_count: number;
+	object_count: number;
+	total_object_bytes: number;
+	user_count: number;
+	active_user_count: number;
+}
+
+interface ManagementBucketResponse {
+	name: string;
+	owner_id: string;
+	created_at: string;
+	object_count: number;
+	total_object_bytes: number;
+}
+
+interface ManagementBucketsResponse {
+	buckets: ManagementBucketResponse[];
+}
+
+interface ManagementObjectResponse {
+	key: string;
+	size: number;
+	etag: string;
+	content_type: string;
+	created_at: string;
+	updated_at: string;
+}
+
+interface ManagementObjectsResponse {
+	bucket: string;
+	is_truncated: boolean;
+	next_cursor: string;
+	objects: ManagementObjectResponse[];
+	common_prefixes: string[];
+}
+
+interface ManagementKeyResponse {
+	id: string;
+	display_name: string;
+	access_key_id: string;
+	sigv4_access_key_id: string;
+	role: 'admin' | 'member';
+	is_active: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+interface ManagementKeysResponse {
+	keys: ManagementKeyResponse[];
+}
+
+interface ManagementCreateKeyResponse {
+	key: ManagementKeyResponse;
+	bearer_token: string;
+	sigv4: {
+		access_key_id: string;
+		secret_key: string;
+	};
+}
+
+function mapBucket(bucket: ManagementBucketResponse): Bucket {
+	return {
+		name: bucket.name,
+		ownerId: bucket.owner_id,
+		createdAt: bucket.created_at,
+		objectCount: bucket.object_count,
+		totalObjectBytes: bucket.total_object_bytes
+	};
+}
+
+function mapObject(bucketName: string, object: ManagementObjectResponse): StorageObject {
+	return {
+		id: `${bucketName}/${object.key}`,
+		bucketName,
+		key: object.key,
+		size: object.size,
+		etag: object.etag,
+		contentType: object.content_type,
+		createdAt: object.created_at,
+		updatedAt: object.updated_at
+	};
+}
+
+function mapKey(key: ManagementKeyResponse): AccessKey {
+	return {
+		id: key.id,
+		displayName: key.display_name,
+		accessKeyId: key.access_key_id,
+		sigV4AccessKeyId: key.sigv4_access_key_id,
+		role: key.role,
+		isActive: key.is_active,
+		createdAt: key.created_at,
+		updatedAt: key.updated_at
+	};
+}
+
+function encodeObjectKeyPath(key: string): string {
+	return key.split('/').map(encodeURIComponent).join('/');
+}
+
+async function readManagementErrorMessage(res: Response): Promise<string | null> {
+	const contentType = res.headers.get('content-type') ?? '';
+	if (contentType.includes('application/json')) {
+		try {
+			const body = (await res.json()) as ManagementErrorResponse;
+			return body.error?.message ?? null;
+		} catch {
+			return null;
+		}
+	}
+
+	const text = await res.text().catch(() => '');
+	return text.trim() || null;
 }

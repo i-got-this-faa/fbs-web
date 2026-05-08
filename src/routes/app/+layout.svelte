@@ -4,6 +4,8 @@
 	import TopBar from '$lib/components/TopBar.svelte';
 	import { setBucketsContext } from '$lib/stores/buckets.svelte';
 	import { setObjectsContext } from '$lib/stores/objects.svelte';
+	import { setKeysContext } from '$lib/stores/keys.svelte';
+	import { setDashboardContext } from '$lib/stores/dashboard.svelte';
 	import { setPageActionsContext } from '$lib/stores/page-actions.svelte';
 
 	const { children } = $props();
@@ -12,8 +14,10 @@
 	let sidebarCollapsed = $state(false);
 
 	// Set store contexts for all /app routes
+	setDashboardContext();
 	setBucketsContext();
 	setObjectsContext();
+	setKeysContext();
 	setPageActionsContext();
 </script>
 

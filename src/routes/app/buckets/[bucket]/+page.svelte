@@ -5,7 +5,7 @@
 	import { formatBytes, timeAgo, keyBasename, contentTypeIcon } from '$lib/utils/format';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-	import { onMount, onDestroy } from 'svelte';
+	import { onDestroy } from 'svelte';
 
 	const objects = getObjectsContext();
 	const pageActions = getPageActionsContext();
@@ -24,10 +24,6 @@
 		} else {
 			pageActions.clearActions();
 		}
-	});
-
-	onMount(() => {
-		// Actions will be set by the $effect above when currentPrefix changes
 	});
 
 	onDestroy(() => {
@@ -134,6 +130,17 @@
 				</div>
 			{/each}
 		</div>
+		{#if objects.isTruncated}
+			<div class="flex justify-center">
+				<button
+					onclick={() => objects.loadMore()}
+					disabled={objects.isLoadingMore}
+					class="rounded-lg bg-surface-800/60 px-4 py-2 text-sm font-medium text-surface-300 transition-colors hover:bg-surface-800 hover:text-surface-100 disabled:cursor-not-allowed disabled:opacity-50"
+				>
+					{objects.isLoadingMore ? 'Loading...' : 'Load More'}
+				</button>
+			</div>
+		{/if}
 	{/if}
 </div>
 

@@ -4,6 +4,8 @@ export interface Bucket {
 	name: string;
 	ownerId: string;
 	createdAt: string; // ISO 8601
+	objectCount?: number;
+	totalObjectBytes?: number;
 }
 
 // ── Object ──────────────────────────────────────────────────────────────────
@@ -33,6 +35,7 @@ export interface AccessKey {
 	id: string;
 	displayName: string;
 	accessKeyId: string;
+	sigV4AccessKeyId: string;
 	role: 'admin' | 'member';
 	isActive: boolean;
 	createdAt: string;
@@ -42,7 +45,11 @@ export interface AccessKey {
 /** Response when creating a new key — secret shown once */
 export interface CreateKeyResponse {
 	key: AccessKey;
-	secretAccessKey: string;
+	bearerToken: string;
+	sigV4: {
+		accessKeyId: string;
+		secretKey: string;
+	};
 }
 
 export interface CreateKeyRequest {
@@ -55,6 +62,8 @@ export interface DashboardMetrics {
 	totalBuckets: number;
 	totalObjects: number;
 	totalStorageBytes: number;
+	totalKeys: number;
+	activeKeys: number;
 	recentUploads: StorageObject[];
 }
 
