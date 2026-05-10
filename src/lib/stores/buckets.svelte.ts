@@ -7,6 +7,7 @@ import { getConnectionContext } from './connection.svelte';
  */
 class BucketsStore {
 	items = $state<Bucket[]>([]);
+	selected = $state<Bucket | null>(null);
 	isLoading = $state(false);
 	error = $state<string | null>(null);
 
@@ -25,6 +26,19 @@ class BucketsStore {
 			this.error = err instanceof Error ? err.message : 'Failed to load buckets';
 		} finally {
 			this.isLoading = false;
+		}
+	}
+
+	async loadOne(name: string): Promise<void> {
+		const client = this.connection.client;
+		if (!client) return;
+
+		this.error = null;
+
+		try {
+			this.selected = await client.getBucket(name);
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : 'Failed to load bucket';
 		}
 	}
 
@@ -49,9 +63,42 @@ class BucketsStore {
 		try {
 			await client.deleteBucket(name);
 			this.items = this.items.filter((bucket) => bucket.name !== name);
+			if (this.selected?.name === name) this.selected = null;
 			return true;
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : 'Failed to delete bucket';
+			return false;
+		}
+	}
+
+	async empty(name: string): Promise<boolean> {
+		const client = this.connection.client;
+		if (!client) return false;
+
+		try {
+			await client.emptyBucket(name);
+			await this.loadOne(name);
+			this.items = this.items.map((bucket) =>
+				bucket.name === name ? { ...bucket, objectCount: 0, totalObjectBytes: 0 } : bucket
+			);
+			return true;
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : 'Failed to empty bucket';
+			return false;
+		}
+	}
+
+	async deleteEmptyS3(name: string): Promise<boolean> {
+		const client = this.connection.client;
+		if (!client) return false;
+
+		try {
+			await client.deleteEmptyBucketS3(name);
+			this.items = this.items.filter((bucket) => bucket.name !== name);
+			if (this.selected?.name === name) this.selected = null;
+			return true;
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : 'Failed to delete empty bucket';
 			return false;
 		}
 	}

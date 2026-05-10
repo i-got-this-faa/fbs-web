@@ -7,6 +7,7 @@
 	import { setKeysContext } from '$lib/stores/keys.svelte';
 	import { setDashboardContext } from '$lib/stores/dashboard.svelte';
 	import { setPageActionsContext } from '$lib/stores/page-actions.svelte';
+	import { setServerContext } from '$lib/stores/server.svelte';
 
 	const { children } = $props();
 
@@ -18,6 +19,7 @@
 	setBucketsContext();
 	setObjectsContext();
 	setKeysContext();
+	setServerContext();
 	setPageActionsContext();
 </script>
 

@@ -10,6 +10,7 @@ class ObjectsStore {
 	isLoadingMore = $state(false);
 	error = $state<string | null>(null);
 	nextStartAfter = $state<string | null>(null);
+	selectedKeys = $state<string[]>([]);
 
 	currentBucket = $state('');
 	currentPrefix = $state('');
@@ -20,8 +21,12 @@ class ObjectsStore {
 		const client = this.connection.client;
 		if (!client) return;
 
+		const prefixChanged = bucket !== this.currentBucket || prefix !== this.currentPrefix;
 		this.currentBucket = bucket;
 		this.currentPrefix = prefix;
+		if (!append && prefixChanged) {
+			this.clearSelection();
+		}
 		if (append) {
 			this.isLoadingMore = true;
 		} else {
@@ -62,11 +67,70 @@ class ObjectsStore {
 		try {
 			await client.deleteObject(this.currentBucket, key);
 			this.items = this.items.filter((o) => o.key !== key);
+			this.selectedKeys = this.selectedKeys.filter((selectedKey) => selectedKey !== key);
 			return true;
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : 'Failed to delete object';
 			return false;
 		}
+	}
+
+	async removeMany(keys: string[]): Promise<boolean> {
+		const client = this.connection.client;
+		if (!client) return false;
+		if (keys.length === 0) return true;
+
+		try {
+			await client.deleteObjects(this.currentBucket, keys);
+			const keySet = new Set(keys);
+			this.items = this.items.filter((object) => !keySet.has(object.key));
+			this.clearSelection();
+			return true;
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : 'Failed to delete selected objects';
+			return false;
+		}
+	}
+
+	async copy(
+		sourceKey: string,
+		destinationKey: string,
+		destinationBucket = this.currentBucket,
+		metadataDirective: 'COPY' | 'REPLACE' = 'COPY',
+		contentType?: string
+	): Promise<boolean> {
+		const client = this.connection.client;
+		if (!client) return false;
+
+		try {
+			await client.copyObject({
+				sourceBucket: this.currentBucket,
+				sourceKey,
+				destinationBucket,
+				destinationKey,
+				metadataDirective,
+				contentType
+			});
+			await this.load(this.currentBucket, this.currentPrefix);
+			return true;
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : 'Failed to copy object';
+			return false;
+		}
+	}
+
+	toggleSelected(key: string): void {
+		this.selectedKeys = this.selectedKeys.includes(key)
+			? this.selectedKeys.filter((selectedKey) => selectedKey !== key)
+			: [...this.selectedKeys, key];
+	}
+
+	clearSelection(): void {
+		this.selectedKeys = [];
+	}
+
+	selectVisible(): void {
+		this.selectedKeys = this.items.map((object) => object.key);
 	}
 
 	/** Navigate into a folder (prefix) */
@@ -109,6 +173,12 @@ class ObjectsStore {
 
 	get totalItems(): number {
 		return this.items.length + this.commonPrefixes.length;
+	}
+
+	get allVisibleSelected(): boolean {
+		return (
+			this.items.length > 0 && this.items.every((object) => this.selectedKeys.includes(object.key))
+		);
 	}
 }
 

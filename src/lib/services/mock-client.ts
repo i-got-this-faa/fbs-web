@@ -1,13 +1,25 @@
 import type {
 	AccessKey,
+	ActivityItem,
 	Bucket,
+	BucketLocation,
+	CopyObjectRequest,
+	CopyObjectResult,
 	CreateKeyRequest,
 	CreateKeyResponse,
 	DashboardMetrics,
+	DeleteObjectsResult,
 	FbsClient,
+	HeadBucketResult,
+	ListActivityOptions,
 	ListObjectsOptions,
+	ListObjectsV1Options,
 	ObjectListing,
-	StorageObject
+	ObjectListingV1,
+	S3BucketList,
+	ServerConfig,
+	StorageObject,
+	UpdateKeyRequest
 } from '$lib/types/api';
 
 /** Simulates network delay */
@@ -231,17 +243,74 @@ export class MockFbsClient implements FbsClient {
 		return true;
 	}
 
+	// ── Server ─────────────────────────────────────────────────────────────
+	async getConfig(): Promise<ServerConfig> {
+		await delay();
+		return {
+			region: 'us-east-1',
+			devMode: true,
+			publicBaseUrl: 'mock://localhost',
+			limits: {
+				s3MaxKeys: 1000,
+				s3DeleteObjects: 1000,
+				managementObjectListLimit: 1000,
+				managementActivityLimit: 500
+			}
+		};
+	}
+
+	async listActivity(opts?: ListActivityOptions): Promise<ActivityItem[]> {
+		await delay();
+		const limit = opts?.limit ?? 10;
+		const activity = [
+			...this.objects.map(
+				(object, index): ActivityItem => ({
+					id: `act_put_${object.id}`,
+					action: 'put_object',
+					bucket: object.bucketName,
+					key: object.key,
+					size: object.size,
+					etag: object.etag,
+					actorUserId: index % 2 === 0 ? 'usr_001' : 'usr_002',
+					createdAt: object.createdAt
+				})
+			),
+			...this.buckets.map(
+				(bucket): ActivityItem => ({
+					id: `act_bucket_${bucket.name}`,
+					action: 'create_bucket',
+					bucket: bucket.name,
+					actorUserId: bucket.ownerId,
+					createdAt: bucket.createdAt
+				})
+			),
+			{
+				id: 'act_delete_old_log',
+				action: 'delete_object',
+				bucket: 'logs',
+				key: 'access/2026-04-16.log',
+				actorUserId: 'usr_001',
+				createdAt: isoAgo(1)
+			}
+		]
+			.filter((item) => !opts?.bucket || item.bucket === opts.bucket)
+			.filter((item) => !opts?.action || item.action === opts.action)
+			.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+		return activity.slice(0, limit);
+	}
+
 	// ── Buckets ────────────────────────────────────────────────────────────
 	async listBuckets(): Promise<Bucket[]> {
 		await delay();
-		return this.buckets.map((bucket) => {
-			const objects = this.objects.filter((object) => object.bucketName === bucket.name);
-			return {
-				...bucket,
-				objectCount: objects.length,
-				totalObjectBytes: objects.reduce((sum, object) => sum + object.size, 0)
-			};
-		});
+		return this.buckets.map((bucket) => this.summarizeBucket(bucket));
+	}
+
+	async getBucket(name: string): Promise<Bucket> {
+		await delay();
+		const bucket = this.buckets.find((b) => b.name === name);
+		if (!bucket) throw new Error(`Bucket "${name}" not found`);
+		return this.summarizeBucket(bucket);
 	}
 
 	async createBucket(name: string): Promise<Bucket> {
@@ -265,6 +334,14 @@ export class MockFbsClient implements FbsClient {
 		const idx = this.buckets.findIndex((b) => b.name === name);
 		if (idx === -1) throw new Error(`Bucket "${name}" not found`);
 		this.buckets.splice(idx, 1);
+		this.objects = this.objects.filter((o) => o.bucketName !== name);
+	}
+
+	async emptyBucket(name: string): Promise<void> {
+		await delay();
+		if (!this.buckets.some((b) => b.name === name)) {
+			throw new Error(`Bucket "${name}" not found`);
+		}
 		this.objects = this.objects.filter((o) => o.bucketName !== name);
 	}
 
@@ -320,6 +397,108 @@ export class MockFbsClient implements FbsClient {
 		this.objects.splice(idx, 1);
 	}
 
+	async listBucketsS3(): Promise<S3BucketList> {
+		await delay();
+		return {
+			owner: {
+				id: 'usr_001',
+				displayName: 'Mock Admin'
+			},
+			buckets: this.buckets.map((bucket) => ({
+				name: bucket.name,
+				createdAt: bucket.createdAt
+			}))
+		};
+	}
+
+	async headBucketS3(name: string): Promise<HeadBucketResult> {
+		await delay();
+		const exists = this.buckets.some((bucket) => bucket.name === name);
+		return { exists, status: exists ? 200 : 404 };
+	}
+
+	async deleteEmptyBucketS3(name: string): Promise<void> {
+		await delay();
+		const bucketIndex = this.buckets.findIndex((bucket) => bucket.name === name);
+		if (bucketIndex === -1) throw new Error(`Bucket "${name}" not found`);
+		if (this.objects.some((object) => object.bucketName === name)) {
+			throw new Error(`Bucket "${name}" is not empty`);
+		}
+		this.buckets.splice(bucketIndex, 1);
+	}
+
+	async getBucketLocation(name: string): Promise<BucketLocation> {
+		await delay();
+		if (!this.buckets.some((bucket) => bucket.name === name)) {
+			throw new Error(`Bucket "${name}" not found`);
+		}
+		return { bucket: name, region: 'us-east-1' };
+	}
+
+	async listObjectsV1(bucket: string, opts?: ListObjectsV1Options): Promise<ObjectListingV1> {
+		const listing = await this.listObjects(bucket, {
+			prefix: opts?.prefix,
+			startAfter: opts?.marker,
+			maxKeys: opts?.maxKeys,
+			delimiter: opts?.delimiter
+		});
+
+		return {
+			objects: listing.objects,
+			commonPrefixes: listing.commonPrefixes,
+			isTruncated: listing.isTruncated,
+			nextMarker: listing.nextStartAfter
+		};
+	}
+
+	async copyObject(data: CopyObjectRequest): Promise<CopyObjectResult> {
+		await delay();
+		const source = this.objects.find(
+			(object) => object.bucketName === data.sourceBucket && object.key === data.sourceKey
+		);
+		if (!source) {
+			throw new Error(`Object "${data.sourceKey}" not found in bucket "${data.sourceBucket}"`);
+		}
+		if (!this.buckets.some((bucket) => bucket.name === data.destinationBucket)) {
+			throw new Error(`Bucket "${data.destinationBucket}" not found`);
+		}
+
+		const now = isoNow();
+		const copied: StorageObject = {
+			...source,
+			id: randomId(),
+			bucketName: data.destinationBucket,
+			key: data.destinationKey,
+			contentType:
+				data.metadataDirective === 'REPLACE' && data.contentType
+					? data.contentType
+					: source.contentType,
+			createdAt: now,
+			updatedAt: now
+		};
+		this.objects = this.objects.filter(
+			(object) => !(object.bucketName === copied.bucketName && object.key === copied.key)
+		);
+		this.objects.push(copied);
+
+		return { etag: copied.etag, lastModified: copied.updatedAt };
+	}
+
+	async deleteObjects(bucket: string, keys: string[], quiet = false): Promise<DeleteObjectsResult> {
+		await delay();
+		if (keys.length > 1000) throw new Error('DeleteObjects supports at most 1000 keys per request');
+		const keySet = new Set(keys);
+		const deleted = this.objects
+			.filter((object) => object.bucketName === bucket && keySet.has(object.key))
+			.map((object) => object.key);
+
+		this.objects = this.objects.filter(
+			(object) => object.bucketName !== bucket || !keySet.has(object.key)
+		);
+
+		return { deleted: quiet ? [] : deleted };
+	}
+
 	// ── Keys ──────────────────────────────────────────────────────────────
 	async listKeys(): Promise<AccessKey[]> {
 		await delay();
@@ -349,10 +528,7 @@ export class MockFbsClient implements FbsClient {
 		};
 	}
 
-	async updateKey(
-		id: string,
-		data: Partial<Pick<AccessKey, 'displayName' | 'isActive'>>
-	): Promise<AccessKey> {
+	async updateKey(id: string, data: UpdateKeyRequest): Promise<AccessKey> {
 		await delay();
 		const key = this.keys.find((k) => k.id === id);
 		if (!key) throw new Error(`Key "${id}" not found`);
@@ -381,6 +557,15 @@ export class MockFbsClient implements FbsClient {
 			recentUploads: [...this.objects]
 				.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 				.slice(0, 5)
+		};
+	}
+
+	private summarizeBucket(bucket: Bucket): Bucket {
+		const objects = this.objects.filter((object) => object.bucketName === bucket.name);
+		return {
+			...bucket,
+			objectCount: objects.length,
+			totalObjectBytes: objects.reduce((sum, object) => sum + object.size, 0)
 		};
 	}
 }

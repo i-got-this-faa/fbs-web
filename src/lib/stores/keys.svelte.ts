@@ -1,5 +1,10 @@
 import { createContext } from 'svelte';
-import type { AccessKey, CreateKeyRequest, CreateKeyResponse } from '$lib/types/api';
+import type {
+	AccessKey,
+	CreateKeyRequest,
+	CreateKeyResponse,
+	UpdateKeyRequest
+} from '$lib/types/api';
 import { getConnectionContext } from './connection.svelte';
 
 class KeysStore {
@@ -44,13 +49,20 @@ class KeysStore {
 	}
 
 	async toggleActive(id: string, isActive: boolean): Promise<boolean> {
+		return this.update(id, { isActive });
+	}
+
+	async rename(id: string, displayName: string): Promise<boolean> {
+		return this.update(id, { displayName });
+	}
+
+	async update(id: string, data: UpdateKeyRequest): Promise<boolean> {
 		const client = this.connection.client;
 		if (!client) return false;
 
 		try {
-			await client.updateKey(id, { isActive });
-			const key = this.items.find((k) => k.id === id);
-			if (key) key.isActive = isActive;
+			const updated = await client.updateKey(id, data);
+			this.items = this.items.map((key) => (key.id === id ? updated : key));
 			return true;
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : 'Failed to update key';

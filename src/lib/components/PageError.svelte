@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { isHttpError } from '@sveltejs/kit';
+	import { TriangleAlertIcon } from 'lucide-svelte';
 
 	const { error }: { error: unknown } = $props();
 
@@ -20,7 +21,9 @@
 
 <div class="flex min-h-[60vh] items-center justify-center">
 	<div class="max-w-md text-center">
-		<div class="mb-4 text-5xl opacity-40">⚠️</div>
+		<div class="mb-4 flex justify-center text-surface-500 opacity-40">
+			<TriangleAlertIcon size={48} />
+		</div>
 		<h2 class="mb-2 text-lg font-semibold text-surface-200">{parsedError.message}</h2>
 		<p class="mb-1 text-sm text-surface-500">{parsedError.kind}</p>
 		<p class="text-xs text-surface-600">

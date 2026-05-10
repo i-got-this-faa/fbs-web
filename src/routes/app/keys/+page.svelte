@@ -4,9 +4,10 @@
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import { getConnectionContext } from '$lib/stores/connection.svelte';
 	import { getKeysContext } from '$lib/stores/keys.svelte';
 	import { getPageActionsContext } from '$lib/stores/page-actions.svelte';
-	import type { CreateKeyRequest } from '$lib/types/api';
+	import type { AccessKey, CreateKeyRequest } from '$lib/types/api';
 	import { formatDate } from '$lib/utils/format';
 	import { onDestroy, onMount } from 'svelte';
 
@@ -14,12 +15,18 @@
 
 	const keys = getKeysContext();
 	const pageActions = getPageActionsContext();
+	const connection = getConnectionContext();
+	const currentAccessKeyId = $derived(connection.token.split('.')[0] ?? '');
 
 	let showCreateModal = $state(false);
 	let displayName = $state('');
 	let role = $state<CreateKeyRequest['role']>('member');
 	let createError = $state<string | null>(null);
 	let deleteTarget = $state<string | null>(null);
+	let deactivateTarget = $state<AccessKey | null>(null);
+	let renameTarget = $state<AccessKey | null>(null);
+	let renameDisplayName = $state('');
+	let renameError = $state<string | null>(null);
 	let copiedTarget = $state<CopyTarget | null>(null);
 
 	onMount(() => {
@@ -57,6 +64,39 @@
 		deleteTarget = null;
 	}
 
+	async function handleDeactivate() {
+		if (!deactivateTarget) return;
+		await keys.toggleActive(deactivateTarget.id, false);
+		deactivateTarget = null;
+	}
+
+	async function handleToggleActive(key: AccessKey) {
+		if (key.isActive) {
+			deactivateTarget = key;
+			return;
+		}
+
+		await keys.toggleActive(key.id, true);
+	}
+
+	async function handleRename(event: Event) {
+		event.preventDefault();
+		if (!renameTarget) return;
+
+		const trimmedName = renameDisplayName.trim();
+		if (!trimmedName) {
+			renameError = 'Display name is required';
+			return;
+		}
+
+		const success = await keys.rename(renameTarget.id, trimmedName);
+		if (success) {
+			closeRenameModal();
+		} else {
+			renameError = keys.error;
+		}
+	}
+
 	async function copyValue(value: string, target: CopyTarget) {
 		await navigator.clipboard.writeText(value);
 		copiedTarget = target;
@@ -77,6 +117,18 @@
 		createError = null;
 		displayName = '';
 		role = 'member';
+	}
+
+	function openRenameModal(key: AccessKey) {
+		renameTarget = key;
+		renameDisplayName = key.displayName;
+		renameError = null;
+	}
+
+	function closeRenameModal() {
+		renameTarget = null;
+		renameDisplayName = '';
+		renameError = null;
 	}
 </script>
 
@@ -194,17 +246,17 @@
 		<div class="overflow-x-auto rounded-xl border border-surface-800 bg-surface-900">
 			<div class="min-w-[680px]">
 				<div
-					class="grid grid-cols-[1fr_130px_120px_120px_44px] items-center gap-3 border-b border-surface-800 px-4 py-2.5 text-xs font-medium text-surface-500 uppercase"
+					class="grid grid-cols-[1fr_110px_110px_110px_150px] items-center gap-3 border-b border-surface-800 px-4 py-2.5 text-xs font-medium text-surface-500 uppercase"
 				>
 					<span>Name</span>
 					<span>Role</span>
 					<span>Status</span>
 					<span class="text-right">Created</span>
-					<span></span>
+					<span class="text-right">Actions</span>
 				</div>
 				{#each keys.items as key (key.id)}
 					<div
-						class="group grid grid-cols-[1fr_130px_120px_120px_44px] items-center gap-3 border-b border-surface-800/50 px-4 py-3 hover:bg-surface-850"
+						class="group grid grid-cols-[1fr_110px_110px_110px_150px] items-center gap-3 border-b border-surface-800/50 px-4 py-3 hover:bg-surface-850"
 					>
 						<div class="min-w-0">
 							<p class="truncate text-sm font-medium text-surface-200">{key.displayName}</p>
@@ -213,10 +265,22 @@
 						<span class="text-sm text-surface-400 capitalize">{key.role}</span>
 						<StatusBadge status={key.isActive ? 'active' : 'inactive'} />
 						<span class="text-right text-xs text-surface-500">{formatDate(key.createdAt)}</span>
-						<div class="flex justify-end">
+						<div class="flex justify-end gap-1">
+							<button
+								onclick={() => openRenameModal(key)}
+								class="rounded-md px-2 py-1 text-xs text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-200"
+							>
+								Edit
+							</button>
+							<button
+								onclick={() => handleToggleActive(key)}
+								class="rounded-md px-2 py-1 text-xs text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-200"
+							>
+								{key.isActive ? 'Deactivate' : 'Activate'}
+							</button>
 							<button
 								onclick={() => (deleteTarget = key.id)}
-								class="rounded-md p-1.5 text-surface-600 opacity-0 transition-all group-hover:opacity-100 hover:bg-danger-500/10 hover:text-danger-400"
+								class="rounded-md p-1.5 text-surface-600 transition-all hover:bg-danger-500/10 hover:text-danger-400"
 								aria-label="Delete {key.displayName}"
 							>
 								<svg
@@ -300,6 +364,59 @@
 		</div>
 	</form>
 </Modal>
+
+<Modal open={renameTarget !== null} title="Rename Key" onclose={closeRenameModal}>
+	<form onsubmit={handleRename} class="space-y-4">
+		<div>
+			<label for="rename-display-name" class="mb-1.5 block text-sm font-medium text-surface-300">
+				Display name
+			</label>
+			<input
+				id="rename-display-name"
+				type="text"
+				bind:value={renameDisplayName}
+				required
+				class="w-full rounded-lg border border-surface-700 bg-surface-800 px-3.5 py-2 text-sm text-surface-100 outline-none focus:border-accent-500"
+			/>
+		</div>
+
+		{#if renameError}
+			<p
+				class="rounded-lg border border-danger-500/20 bg-danger-500/5 px-3 py-2 text-sm text-danger-400"
+			>
+				{renameError}
+			</p>
+		{/if}
+
+		<div class="flex justify-end gap-3 pt-2">
+			<button
+				type="button"
+				onclick={closeRenameModal}
+				class="rounded-lg px-4 py-2 text-sm font-medium text-surface-400 transition-colors hover:bg-surface-800 hover:text-surface-200"
+			>
+				Cancel
+			</button>
+			<button
+				type="submit"
+				class="rounded-lg bg-accent-500/15 px-4 py-2 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
+			>
+				Rename Key
+			</button>
+		</div>
+	</form>
+</Modal>
+
+<ConfirmDialog
+	open={deactivateTarget !== null}
+	title="Deactivate Access Key"
+	description={deactivateTarget?.accessKeyId === currentAccessKeyId
+		? 'Clients using this key will stop authenticating. This appears to be your current dashboard key. You may be disconnected after deactivation.'
+		: 'Clients using this key will stop authenticating.'}
+	confirmLabel="Deactivate"
+	destructive
+	onconfirm={handleDeactivate}
+	oncancel={() => (deactivateTarget = null)}
+/>
 
 <ConfirmDialog
 	open={deleteTarget !== null}

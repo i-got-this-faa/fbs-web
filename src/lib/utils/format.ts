@@ -45,15 +45,15 @@ export function keyBasename(key: string): string {
 	return parts[parts.length - 1] ?? key;
 }
 
-/** Get a content-type icon label */
-export function contentTypeIcon(contentType: string): string {
-	if (contentType.startsWith('image/')) return '🖼';
-	if (contentType.startsWith('video/')) return '🎬';
-	if (contentType.startsWith('audio/')) return '🎵';
-	if (contentType.startsWith('text/')) return '📄';
-	if (contentType.includes('pdf')) return '📕';
-	if (contentType.includes('json')) return '{ }';
+/** Map content type to a Lucide icon name for use with FileTypeIcon component */
+export function contentTypeIconName(contentType: string): string {
+	if (contentType.startsWith('image/')) return 'image';
+	if (contentType.startsWith('video/')) return 'video';
+	if (contentType.startsWith('audio/')) return 'audio';
+	if (contentType.startsWith('text/')) return 'text';
+	if (contentType.includes('pdf')) return 'pdf';
+	if (contentType.includes('json')) return 'json';
 	if (contentType.includes('zip') || contentType.includes('tar') || contentType.includes('gzip'))
-		return '📦';
-	return '📎';
+		return 'archive';
+	return 'file';
 }
