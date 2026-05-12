@@ -1,5 +1,10 @@
 import { createContext } from 'svelte';
-import type { ListObjectsOptions, ObjectListing, StorageObject } from '$lib/types/api';
+import type {
+	ListObjectsOptions,
+	ObjectListing,
+	ObjectMetadata,
+	StorageObject
+} from '$lib/types/api';
 import { getConnectionContext } from './connection.svelte';
 
 class ObjectsStore {
@@ -8,6 +13,8 @@ class ObjectsStore {
 	isTruncated = $state(false);
 	isLoading = $state(false);
 	isLoadingMore = $state(false);
+	isUploading = $state(false);
+	uploadProgress = $state('');
 	error = $state<string | null>(null);
 	nextStartAfter = $state<string | null>(null);
 	selectedKeys = $state<string[]>([]);
@@ -116,6 +123,67 @@ class ObjectsStore {
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : 'Failed to copy object';
 			return false;
+		}
+	}
+
+	/** Download an object via the S3 endpoint */
+	download(key: string): void {
+		const client = this.connection.client;
+		if (!client) return;
+
+		const url = client.getObjectUrl(this.currentBucket, key);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = key.split('/').pop() ?? key;
+		a.target = '_blank';
+		a.rel = 'noopener';
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+	}
+
+	/** Upload files to the current bucket/prefix */
+	async upload(files: FileList | File[]): Promise<boolean> {
+		const client = this.connection.client;
+		if (!client) return false;
+
+		this.isUploading = true;
+		this.error = null;
+
+		try {
+			const fileArray = Array.from(files);
+			for (let i = 0; i < fileArray.length; i++) {
+				const file = fileArray[i];
+				const key = this.currentPrefix + file.name;
+				this.uploadProgress = `Uploading ${i + 1}/${fileArray.length}: ${file.name}`;
+				await client.uploadObject({
+					bucket: this.currentBucket,
+					key,
+					body: file,
+					contentType: file.type || 'application/octet-stream'
+				});
+			}
+			await this.load(this.currentBucket, this.currentPrefix);
+			return true;
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : 'Failed to upload file(s)';
+			return false;
+		} finally {
+			this.isUploading = false;
+			this.uploadProgress = '';
+		}
+	}
+
+	/** Get object metadata via HEAD */
+	async getMetadata(key: string): Promise<ObjectMetadata | null> {
+		const client = this.connection.client;
+		if (!client) return null;
+
+		try {
+			return await client.headObject(this.currentBucket, key);
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : 'Failed to load metadata';
+			return null;
 		}
 	}
 

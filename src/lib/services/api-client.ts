@@ -16,10 +16,12 @@ import type {
 	ListObjectsV1Options,
 	ObjectListing,
 	ObjectListingV1,
+	ObjectMetadata,
 	S3BucketList,
 	ServerConfig,
 	StorageObject,
-	UpdateKeyRequest
+	UpdateKeyRequest,
+	UploadObjectRequest
 } from '$lib/types/api';
 import { sha256Hex } from '$lib/utils/crypto';
 import {
@@ -232,6 +234,52 @@ export class FbsApiClient implements FbsClient {
 		if (!res.ok && res.status !== 204) {
 			await this.throwS3Error(res, 'Failed to delete object');
 		}
+	}
+
+	/** Build a direct download URL for an object via the S3 endpoint */
+	getObjectUrl(bucket: string, key: string): string {
+		return `${this.baseUrl.replace(/\/$/, '')}/${encodeBucketName(bucket)}/${encodeObjectKeyPath(key)}`;
+	}
+
+	/** S3 PutObject: PUT /{bucket}/{key} */
+	async uploadObject(req: UploadObjectRequest): Promise<void> {
+		const headers: Record<string, string> = {};
+		if (req.contentType) {
+			headers['Content-Type'] = req.contentType;
+		}
+
+		const res = await this.s3Fetch(
+			`/${encodeBucketName(req.bucket)}/${encodeObjectKeyPath(req.key)}`,
+			{
+				method: 'PUT',
+				headers,
+				body: req.body
+			}
+		);
+
+		if (!res.ok) {
+			await this.throwS3Error(res, 'Failed to upload object');
+		}
+	}
+
+	/** S3 HeadObject: HEAD /{bucket}/{key} */
+	async headObject(bucket: string, key: string): Promise<ObjectMetadata> {
+		const res = await this.s3Fetch(`/${encodeBucketName(bucket)}/${encodeObjectKeyPath(key)}`, {
+			method: 'HEAD'
+		});
+
+		if (!res.ok) {
+			await this.throwS3Error(res, 'Failed to get object metadata');
+		}
+
+		return {
+			key,
+			bucketName: bucket,
+			size: Number(res.headers.get('content-length') ?? 0),
+			etag: res.headers.get('etag') ?? '',
+			contentType: res.headers.get('content-type') ?? 'application/octet-stream',
+			lastModified: res.headers.get('last-modified') ?? new Date().toISOString()
+		};
 	}
 
 	async listBucketsS3(): Promise<S3BucketList> {

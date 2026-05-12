@@ -175,6 +175,24 @@ export interface DeleteObjectsResult {
 	deleted: string[];
 }
 
+// ── Upload ──────────────────────────────────────────────────────────────────
+export interface UploadObjectRequest {
+	bucket: string;
+	key: string;
+	body: Blob | ArrayBuffer | string;
+	contentType?: string;
+}
+
+// ── Object Metadata ─────────────────────────────────────────────────────────
+export interface ObjectMetadata {
+	key: string;
+	bucketName: string;
+	size: number;
+	etag: string;
+	contentType: string;
+	lastModified: string;
+}
+
 // ── API Client Interface ────────────────────────────────────────────────────
 export interface ListObjectsOptions {
 	prefix?: string;
@@ -197,6 +215,9 @@ export interface FbsClient {
 	// Objects
 	listObjects(bucket: string, opts?: ListObjectsOptions): Promise<ObjectListing>;
 	deleteObject(bucket: string, key: string): Promise<void>;
+	getObjectUrl(bucket: string, key: string): string;
+	uploadObject(req: UploadObjectRequest): Promise<void>;
+	headObject(bucket: string, key: string): Promise<ObjectMetadata>;
 	// Keys
 	listKeys(): Promise<AccessKey[]>;
 	createKey(data: CreateKeyRequest): Promise<CreateKeyResponse>;

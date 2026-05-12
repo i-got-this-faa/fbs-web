@@ -16,10 +16,12 @@ import type {
 	ListObjectsV1Options,
 	ObjectListing,
 	ObjectListingV1,
+	ObjectMetadata,
 	S3BucketList,
 	ServerConfig,
 	StorageObject,
-	UpdateKeyRequest
+	UpdateKeyRequest,
+	UploadObjectRequest
 } from '$lib/types/api';
 
 /** Simulates network delay */
@@ -395,6 +397,54 @@ export class MockFbsClient implements FbsClient {
 		const idx = this.objects.findIndex((o) => o.bucketName === bucket && o.key === key);
 		if (idx === -1) throw new Error(`Object "${key}" not found in bucket "${bucket}"`);
 		this.objects.splice(idx, 1);
+	}
+
+	getObjectUrl(bucket: string, key: string): string {
+		return `mock://localhost/${bucket}/${key}`;
+	}
+
+	async uploadObject(req: UploadObjectRequest): Promise<void> {
+		await delay(300);
+		if (!this.buckets.some((b) => b.name === req.bucket)) {
+			throw new Error(`Bucket "${req.bucket}" not found`);
+		}
+
+		const size =
+			req.body instanceof Blob
+				? req.body.size
+				: typeof req.body === 'string'
+					? new TextEncoder().encode(req.body).length
+					: (req.body as ArrayBuffer).byteLength;
+
+		const now = isoNow();
+		const obj: StorageObject = {
+			id: randomId(),
+			bucketName: req.bucket,
+			key: req.key,
+			size,
+			etag: `"${randomId().slice(0, 12)}"`,
+			contentType: req.contentType ?? 'application/octet-stream',
+			createdAt: now,
+			updatedAt: now
+		};
+
+		// Replace if same key exists
+		this.objects = this.objects.filter((o) => !(o.bucketName === req.bucket && o.key === req.key));
+		this.objects.push(obj);
+	}
+
+	async headObject(bucket: string, key: string): Promise<ObjectMetadata> {
+		await delay();
+		const obj = this.objects.find((o) => o.bucketName === bucket && o.key === key);
+		if (!obj) throw new Error(`Object "${key}" not found in bucket "${bucket}"`);
+		return {
+			key: obj.key,
+			bucketName: obj.bucketName,
+			size: obj.size,
+			etag: obj.etag,
+			contentType: obj.contentType,
+			lastModified: obj.updatedAt
+		};
 	}
 
 	async listBucketsS3(): Promise<S3BucketList> {
