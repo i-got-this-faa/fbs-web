@@ -27,7 +27,8 @@
 		UploadIcon,
 		InfoIcon,
 		HardDriveIcon,
-		CalendarIcon
+		CalendarIcon,
+		CopyIcon
 	} from 'lucide-svelte';
 	import { onDestroy } from 'svelte';
 
@@ -42,7 +43,6 @@
 		bucketSummary?.totalObjectBytes ?? objects.items.reduce((sum, object) => sum + object.size, 0)
 	);
 
-	let deleteTarget = $state<string | null>(null);
 	let deleteBucketOpen = $state(false);
 	let deleteSelectedOpen = $state(false);
 	let copyTarget = $state<StorageObject | null>(null);
@@ -76,14 +76,6 @@
 	onDestroy(() => {
 		pageActions.clearActions();
 	});
-
-	async function handleDelete() {
-		if (!deleteTarget) return;
-		const bucket = bucketName;
-		await objects.remove(deleteTarget);
-		deleteTarget = null;
-		if (bucket) await buckets.loadOne(bucket);
-	}
 
 	async function handleDeleteSelected() {
 		const bucket = bucketName;
@@ -351,7 +343,7 @@
 			<div class="overflow-x-auto rounded-xl border border-surface-800 bg-surface-900">
 				<div class="min-w-[760px]">
 					<div
-						class="grid grid-cols-[32px_1fr_100px_120px_88px] items-center gap-3 border-b border-surface-800 px-4 py-2.5 text-xs font-medium text-surface-500 uppercase"
+						class="grid grid-cols-[32px_1fr_80px_100px_96px] items-center gap-3 border-b border-surface-800 px-4 py-2.5 text-xs font-medium text-surface-500 uppercase"
 					>
 						<button
 							onclick={toggleVisibleSelection}
@@ -375,13 +367,13 @@
 						</button>
 						<span>Name</span><span class="text-right">Size</span><span class="text-right"
 							>Modified</span
-						><span></span>
+						><span class="text-right">Actions</span>
 					</div>
 					{#each objects.commonPrefixes as prefix (prefix)}
 						{@const folderName = prefix.slice(objects.currentPrefix.length).replace(/\/$/, '')}
 						<button
 							onclick={() => objects.navigateToPrefix(prefix)}
-							class="grid w-full grid-cols-[32px_1fr_100px_120px_88px] gap-3 border-b border-surface-800/50 px-4 py-3 text-left hover:bg-surface-850"
+							class="grid w-full grid-cols-[32px_1fr_80px_100px_96px] gap-3 border-b border-surface-800/50 px-4 py-3 text-left hover:bg-surface-850"
 						>
 							<span></span>
 							<div class="flex items-center gap-3">
@@ -396,7 +388,7 @@
 					{/each}
 					{#each objects.items as obj (obj.id)}
 						<div
-							class="group grid grid-cols-[32px_1fr_100px_120px_88px] gap-3 border-b border-surface-800/50 px-4 py-3 hover:bg-surface-850"
+							class="group grid grid-cols-[32px_1fr_80px_100px_96px] gap-3 border-b border-surface-800/50 px-4 py-3 hover:bg-surface-850"
 						>
 							<div class="flex items-center">
 								<button
@@ -442,44 +434,27 @@
 							<span class="self-center text-right text-xs text-surface-500">
 								{timeAgo(obj.updatedAt)}
 							</span>
-							<div class="flex items-center justify-end gap-0.5">
+							<div class="flex items-center justify-end gap-1">
 								<button
 									onclick={() => openMetadataModal(obj)}
-									class="rounded-md p-1.5 text-surface-600 opacity-0 transition-all group-hover:opacity-100 hover:bg-surface-800 hover:text-surface-200"
+									class="rounded-md p-1.5 text-surface-600 transition-colors hover:bg-surface-800 hover:text-surface-200"
 									aria-label="View details"
 								>
 									<InfoIcon size={14} />
 								</button>
 								<button
 									onclick={() => objects.download(obj.key)}
-									class="rounded-md p-1.5 text-surface-600 opacity-0 transition-all group-hover:opacity-100 hover:bg-surface-800 hover:text-surface-200"
+									class="rounded-md p-1.5 text-surface-600 transition-colors hover:bg-surface-800 hover:text-surface-200"
 									aria-label="Download"
 								>
 									<DownloadIcon size={14} />
 								</button>
 								<button
 									onclick={() => openCopyModal(obj)}
-									class="rounded-md px-2 py-1 text-xs text-surface-500 opacity-0 transition-all group-hover:opacity-100 hover:bg-surface-800 hover:text-surface-200"
+									class="rounded-md p-1.5 text-surface-600 transition-colors hover:bg-surface-800 hover:text-surface-200"
+									aria-label="Copy"
 								>
-									Copy
-								</button>
-								<button
-									onclick={() => (deleteTarget = obj.key)}
-									class="rounded-md p-1.5 text-surface-600 opacity-0 transition-all group-hover:opacity-100 hover:bg-danger-500/10 hover:text-danger-400"
-									aria-label="Delete"
-								>
-									<svg
-										width="14"
-										height="14"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-									>
-										<path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path
-											d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"
-										/>
-									</svg>
+									<CopyIcon size={14} />
 								</button>
 							</div>
 						</div>
@@ -524,16 +499,6 @@
 	error={copyError}
 	onsubmit={handleCopy}
 	onclose={closeCopyModal}
-/>
-
-<ConfirmDialog
-	open={deleteTarget !== null}
-	title="Delete Object"
-	description="Delete this object permanently?"
-	confirmLabel="Delete"
-	destructive
-	onconfirm={handleDelete}
-	oncancel={() => (deleteTarget = null)}
 />
 
 <ConfirmDialog
