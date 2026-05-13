@@ -126,20 +126,19 @@ class ObjectsStore {
 		}
 	}
 
-	/** Download an object via the S3 endpoint */
-	download(key: string): void {
+	/** Download an object via a short-lived signed public URL */
+	async download(key: string): Promise<boolean> {
 		const client = this.connection.client;
-		if (!client) return;
+		if (!client) return false;
 
-		const url = client.getObjectUrl(this.currentBucket, key);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = key.split('/').pop() ?? key;
-		a.target = '_blank';
-		a.rel = 'noopener';
-		document.body.appendChild(a);
-		a.click();
-		document.body.removeChild(a);
+		try {
+			const publicUrl = await client.createPublicObjectUrl(this.currentBucket, key);
+			this.openDownload(publicUrl.url, key);
+			return true;
+		} catch (err) {
+			this.error = err instanceof Error ? err.message : 'Failed to create download URL';
+			return false;
+		}
 	}
 
 	/** Upload files to the current bucket/prefix */
@@ -199,6 +198,17 @@ class ObjectsStore {
 
 	selectVisible(): void {
 		this.selectedKeys = this.items.map((object) => object.key);
+	}
+
+	private openDownload(url: string, key: string): void {
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = key.split('/').pop() ?? key;
+		a.target = '_blank';
+		a.rel = 'noopener';
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
 	}
 
 	/** Navigate into a folder (prefix) */

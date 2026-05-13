@@ -17,6 +17,7 @@ import type {
 	ObjectListing,
 	ObjectListingV1,
 	ObjectMetadata,
+	PublicObjectUrl,
 	S3BucketList,
 	ServerConfig,
 	StorageObject,
@@ -239,6 +240,27 @@ export class FbsApiClient implements FbsClient {
 	/** Build a direct download URL for an object via the S3 endpoint */
 	getObjectUrl(bucket: string, key: string): string {
 		return `${this.baseUrl.replace(/\/$/, '')}/${encodeBucketName(bucket)}/${encodeObjectKeyPath(key)}`;
+	}
+
+	async createPublicObjectUrl(bucket: string, key: string): Promise<PublicObjectUrl> {
+		const res = await this.managementFetch(
+			`/buckets/${encodeBucketName(bucket)}/objects/${encodeObjectKeyPath(key)}/public-url`,
+			{
+				method: 'POST',
+				body: JSON.stringify({})
+			}
+		);
+
+		if (!res.ok) {
+			await this.throwManagementError(res, 'Failed to create public object URL');
+		}
+
+		const body = (await res.json()) as ManagementPublicObjectUrlResponse;
+		return {
+			url: body.url,
+			expiresAt: body.expires_at,
+			cacheControl: body.cache_control
+		};
 	}
 
 	/** S3 PutObject: PUT /{bucket}/{key} */
@@ -543,6 +565,12 @@ interface ManagementObjectsResponse {
 	next_cursor: string;
 	objects: ManagementObjectResponse[];
 	common_prefixes: string[];
+}
+
+interface ManagementPublicObjectUrlResponse {
+	url: string;
+	expires_at: string;
+	cache_control: string;
 }
 
 interface ManagementKeyResponse {

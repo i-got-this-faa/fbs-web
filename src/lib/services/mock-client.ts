@@ -17,6 +17,7 @@ import type {
 	ObjectListing,
 	ObjectListingV1,
 	ObjectMetadata,
+	PublicObjectUrl,
 	S3BucketList,
 	ServerConfig,
 	StorageObject,
@@ -401,6 +402,20 @@ export class MockFbsClient implements FbsClient {
 
 	getObjectUrl(bucket: string, key: string): string {
 		return `mock://localhost/${bucket}/${key}`;
+	}
+
+	async createPublicObjectUrl(bucket: string, key: string): Promise<PublicObjectUrl> {
+		await delay();
+		if (!this.objects.some((object) => object.bucketName === bucket && object.key === key)) {
+			throw new Error(`Object "${key}" not found in bucket "${bucket}"`);
+		}
+
+		const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+		return {
+			url: this.getObjectUrl(bucket, key),
+			expiresAt,
+			cacheControl: 'public, max-age=3600, must-revalidate'
+		};
 	}
 
 	async uploadObject(req: UploadObjectRequest): Promise<void> {

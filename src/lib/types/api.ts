@@ -157,6 +157,12 @@ export interface ObjectListingV1 {
 	nextMarker: string | null;
 }
 
+export interface PublicObjectUrl {
+	url: string;
+	expiresAt: string;
+	cacheControl: string;
+}
+
 export interface CopyObjectRequest {
 	sourceBucket: string;
 	sourceKey: string;
@@ -216,6 +222,7 @@ export interface FbsClient {
 	listObjects(bucket: string, opts?: ListObjectsOptions): Promise<ObjectListing>;
 	deleteObject(bucket: string, key: string): Promise<void>;
 	getObjectUrl(bucket: string, key: string): string;
+	createPublicObjectUrl(bucket: string, key: string): Promise<PublicObjectUrl>;
 	uploadObject(req: UploadObjectRequest): Promise<void>;
 	headObject(bucket: string, key: string): Promise<ObjectMetadata>;
 	// Keys
