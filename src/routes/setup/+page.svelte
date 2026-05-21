@@ -38,8 +38,13 @@
 	<title>FBS — Connect to Backend</title>
 </svelte:head>
 
-<div class="flex min-h-screen items-center justify-center bg-surface-950 px-4 py-10">
-	<div class="grid w-full max-w-5xl items-center gap-10 lg:grid-cols-[1fr_28rem] lg:gap-16">
+<div
+	class="relative flex min-h-screen items-center justify-center overflow-hidden bg-surface-950 px-4 py-10"
+>
+	<div class="setup-pattern" aria-hidden="true"></div>
+	<div
+		class="relative z-10 grid w-full max-w-5xl items-center gap-10 lg:grid-cols-[1fr_28rem] lg:gap-16"
+	>
 		<!-- Logo & Header -->
 		<div class="mx-auto w-full max-w-md text-center lg:mx-0 lg:text-left">
 			<div class="mb-5 flex items-center justify-center gap-4 lg:justify-start">
@@ -150,9 +155,6 @@
 				</svg>
 				Use Demo Data
 			</button>
-			<p class="mt-2 text-center text-xs text-surface-600">
-				Explore the dashboard with sample data — no backend required
-			</p>
 		</div>
 	</div>
 </div>

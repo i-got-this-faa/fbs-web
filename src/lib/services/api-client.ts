@@ -22,18 +22,26 @@ import type {
 	ServerConfig,
 	StorageObject,
 	UpdateKeyRequest,
+	UploadObjectOptions,
+	UploadProgress,
 	UploadObjectRequest
 } from '$lib/types/api';
 import { sha256Hex } from '$lib/utils/crypto';
 import {
+	buildCompleteMultipartUploadXml,
 	buildDeleteObjectsXml,
 	parseBucketLocation,
 	parseCopyObjectResult,
 	parseDeleteObjectsResult,
+	parseInitiateMultipartUploadResult,
 	parseListBuckets,
 	parseListObjectsV1,
 	parseS3ErrorMessage
 } from '$lib/utils/s3-xml';
+
+const DEFAULT_MULTIPART_THRESHOLD_BYTES = 8 * 1024 * 1024;
+const DEFAULT_MULTIPART_PART_SIZE_BYTES = 8 * 1024 * 1024;
+const DEFAULT_MULTIPART_CONCURRENCY = 3;
 
 /**
  * fbs-core API client.
@@ -47,7 +55,7 @@ export class FbsApiClient implements FbsClient {
 		private token: string
 	) {}
 
-	private get authHeaders(): HeadersInit {
+	private get authHeaders(): Record<string, string> {
 		if (this.token) {
 			return { Authorization: `Bearer ${this.token}` };
 		}
@@ -263,11 +271,40 @@ export class FbsApiClient implements FbsClient {
 		};
 	}
 
-	/** S3 PutObject: PUT /{bucket}/{key} */
-	async uploadObject(req: UploadObjectRequest): Promise<void> {
+	/** S3 PutObject or multipart upload, selected automatically by object size. */
+	async uploadObject(req: UploadObjectRequest, options?: UploadObjectOptions): Promise<void> {
+		const body = toUploadBlob(req.body, req.contentType);
+		const threshold = options?.multipartThresholdBytes ?? DEFAULT_MULTIPART_THRESHOLD_BYTES;
+
+		if (!body || body.size <= threshold) {
+			await this.putObject(req, options);
+			return;
+		}
+
+		await this.uploadMultipartObject(req, body, options);
+	}
+
+	private async putObject(
+		req: UploadObjectRequest,
+		options: UploadObjectOptions | undefined
+	): Promise<void> {
+		const contentType = req.contentType ?? 'application/octet-stream';
+		const totalBytes = uploadBodySize(req.body);
+		const fileName = req.fileName ?? keyFileName(req.key);
+
+		reportUploadProgress(options, {
+			bucket: req.bucket,
+			key: req.key,
+			fileName,
+			loadedBytes: 0,
+			totalBytes,
+			percent: 0,
+			phase: 'single'
+		});
+
 		const headers: Record<string, string> = {};
 		if (req.contentType) {
-			headers['Content-Type'] = req.contentType;
+			headers['Content-Type'] = contentType;
 		}
 
 		const res = await this.s3Fetch(
@@ -275,12 +312,243 @@ export class FbsApiClient implements FbsClient {
 			{
 				method: 'PUT',
 				headers,
-				body: req.body
+				body: req.body,
+				signal: options?.signal
 			}
 		);
 
 		if (!res.ok) {
 			await this.throwS3Error(res, 'Failed to upload object');
+		}
+
+		reportUploadProgress(options, {
+			bucket: req.bucket,
+			key: req.key,
+			fileName,
+			loadedBytes: totalBytes,
+			totalBytes,
+			percent: 100,
+			phase: 'done'
+		});
+	}
+
+	private async uploadMultipartObject(
+		req: UploadObjectRequest,
+		body: Blob,
+		options: UploadObjectOptions | undefined
+	): Promise<void> {
+		const contentType = req.contentType ?? 'application/octet-stream';
+		const fileName = req.fileName ?? keyFileName(req.key);
+		const partSize = Math.max(1, options?.partSizeBytes ?? DEFAULT_MULTIPART_PART_SIZE_BYTES);
+		const concurrency = Math.max(1, options?.concurrency ?? DEFAULT_MULTIPART_CONCURRENCY);
+		const partCount = Math.ceil(body.size / partSize);
+		const uploadPath = `/${encodeBucketName(req.bucket)}/${encodeObjectKeyPath(req.key)}`;
+		let uploadId: string | null = null;
+		const partLoadedBytes = new Map<number, number>();
+		const uploadedParts: Array<{ partNumber: number; etag: string }> = [];
+		const partAbortController = new AbortController();
+		const abortParts = () => partAbortController.abort();
+
+		options?.signal?.addEventListener('abort', abortParts, { once: true });
+
+		const report = (
+			phase: 'initiating' | 'uploading_parts' | 'completing' | 'aborting' | 'done',
+			partNumber?: number
+		) => {
+			const loadedBytes =
+				phase === 'done'
+					? body.size
+					: Array.from(partLoadedBytes.values()).reduce((sum, value) => sum + value, 0);
+			reportUploadProgress(options, {
+				bucket: req.bucket,
+				key: req.key,
+				fileName,
+				loadedBytes,
+				totalBytes: body.size,
+				percent: body.size === 0 ? 100 : Math.min(100, (loadedBytes / body.size) * 100),
+				phase,
+				partNumber,
+				partCount
+			});
+		};
+
+		try {
+			throwIfAborted(options?.signal);
+			report('initiating');
+
+			const initiateRes = await this.s3Fetch(`${uploadPath}?uploads`, {
+				method: 'POST',
+				headers: { 'Content-Type': contentType },
+				signal: options?.signal
+			});
+			if (!initiateRes.ok) {
+				await this.throwS3Error(initiateRes, 'Failed to start multipart upload');
+			}
+			uploadId = parseInitiateMultipartUploadResult(await initiateRes.text()).uploadId;
+
+			throwIfAborted(options?.signal);
+			await this.uploadMultipartParts({
+				body,
+				contentType,
+				uploadPath,
+				uploadId,
+				partSize,
+				partCount,
+				concurrency,
+				signal: partAbortController.signal,
+				onPartProgress: (partNumber, loadedBytes) => {
+					partLoadedBytes.set(partNumber, loadedBytes);
+					report('uploading_parts', partNumber);
+				},
+				onPartComplete: (partNumber, etag) => {
+					partLoadedBytes.set(partNumber, partByteSize(body.size, partSize, partNumber));
+					uploadedParts.push({ partNumber, etag });
+					report('uploading_parts', partNumber);
+				}
+			});
+
+			throwIfAborted(options?.signal);
+			report('completing');
+
+			const completeQuery = new URLSearchParams({ uploadId });
+			const completeRes = await this.s3Fetch(`${uploadPath}?${completeQuery.toString()}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/xml' },
+				body: buildCompleteMultipartUploadXml(
+					uploadedParts.sort((a, b) => a.partNumber - b.partNumber)
+				),
+				signal: options?.signal
+			});
+			if (!completeRes.ok) {
+				await this.throwS3Error(completeRes, 'Failed to complete multipart upload');
+			}
+
+			report('done');
+		} catch (err) {
+			partAbortController.abort();
+			if (uploadId) {
+				report('aborting');
+				try {
+					await this.abortMultipartUpload(uploadPath, uploadId);
+				} catch {
+					// Preserve the original upload error; abort is best-effort cleanup.
+				}
+			}
+			throw err;
+		} finally {
+			options?.signal?.removeEventListener('abort', abortParts);
+		}
+	}
+
+	private async uploadMultipartParts(params: {
+		body: Blob;
+		contentType: string;
+		uploadPath: string;
+		uploadId: string;
+		partSize: number;
+		partCount: number;
+		concurrency: number;
+		signal: AbortSignal;
+		onPartProgress: (partNumber: number, loadedBytes: number) => void;
+		onPartComplete: (partNumber: number, etag: string) => void;
+	}): Promise<void> {
+		let nextPartNumber = 1;
+
+		const uploadNextPart = async (): Promise<void> => {
+			while (nextPartNumber <= params.partCount) {
+				throwIfAborted(params.signal);
+				const partNumber = nextPartNumber;
+				nextPartNumber += 1;
+				const start = (partNumber - 1) * params.partSize;
+				const end = Math.min(start + params.partSize, params.body.size);
+				const partQuery = new URLSearchParams({
+					partNumber: String(partNumber),
+					uploadId: params.uploadId
+				});
+				const etag = await this.uploadPartWithProgress({
+					path: `${params.uploadPath}?${partQuery.toString()}`,
+					body: params.body.slice(start, end),
+					contentType: params.contentType,
+					signal: params.signal,
+					onProgress: (loadedBytes) => params.onPartProgress(partNumber, loadedBytes)
+				});
+				params.onPartComplete(partNumber, etag);
+			}
+		};
+
+		await Promise.all(
+			Array.from({ length: Math.min(params.concurrency, params.partCount) }, () => uploadNextPart())
+		);
+	}
+
+	private uploadPartWithProgress(params: {
+		path: string;
+		body: Blob;
+		contentType: string;
+		signal?: AbortSignal;
+		onProgress?: (loadedBytes: number) => void;
+	}): Promise<string> {
+		return new Promise((resolve, reject) => {
+			if (params.signal?.aborted) {
+				reject(createAbortError());
+				return;
+			}
+
+			const xhr = new XMLHttpRequest();
+			const cleanup = () => {
+				params.signal?.removeEventListener('abort', handleAbort);
+			};
+			const handleAbort = () => {
+				xhr.abort();
+			};
+
+			xhr.open('PUT', `${this.baseUrl.replace(/\/$/, '')}${params.path}`);
+			for (const [name, value] of Object.entries(this.authHeaders)) {
+				xhr.setRequestHeader(name, value);
+			}
+			xhr.setRequestHeader('Content-Type', params.contentType);
+			xhr.upload.onprogress = (event) => {
+				if (event.lengthComputable) {
+					params.onProgress?.(event.loaded);
+				}
+			};
+			xhr.onload = () => {
+				cleanup();
+				if (xhr.status >= 200 && xhr.status < 300) {
+					const etag = xhr.getResponseHeader('ETag');
+					if (!etag) {
+						reject(new Error('Upload part response did not include an ETag'));
+						return;
+					}
+					resolve(etag);
+					return;
+				}
+
+				reject(
+					new Error(
+						parseS3ErrorMessage(xhr.responseText) ?? `Failed to upload part (HTTP ${xhr.status})`
+					)
+				);
+			};
+			xhr.onerror = () => {
+				cleanup();
+				reject(new Error('Network error while uploading part'));
+			};
+			xhr.onabort = () => {
+				cleanup();
+				reject(createAbortError());
+			};
+
+			params.signal?.addEventListener('abort', handleAbort, { once: true });
+			xhr.send(params.body);
+		});
+	}
+
+	private async abortMultipartUpload(uploadPath: string, uploadId: string): Promise<void> {
+		const abortQuery = new URLSearchParams({ uploadId });
+		const res = await this.s3Fetch(`${uploadPath}?${abortQuery.toString()}`, { method: 'DELETE' });
+		if (!res.ok && res.status !== 204 && res.status !== 404) {
+			await this.throwS3Error(res, 'Failed to abort multipart upload');
 		}
 	}
 
@@ -679,6 +947,58 @@ function encodeBucketName(name: string): string {
 
 function encodeCopySource(bucket: string, key: string): string {
 	return `/${encodeBucketName(bucket)}/${encodeObjectKeyPath(key)}`;
+}
+
+function toUploadBlob(body: Blob | ArrayBuffer | string, contentType?: string): Blob | null {
+	if (body instanceof Blob) {
+		return body;
+	}
+	if (body instanceof ArrayBuffer) {
+		return new Blob([body], { type: contentType });
+	}
+	if (typeof body === 'string') {
+		return new Blob([body], { type: contentType });
+	}
+	return null;
+}
+
+function uploadBodySize(body: Blob | ArrayBuffer | string): number {
+	if (body instanceof Blob) {
+		return body.size;
+	}
+	if (body instanceof ArrayBuffer) {
+		return body.byteLength;
+	}
+	return new TextEncoder().encode(body).byteLength;
+}
+
+function keyFileName(key: string): string {
+	return key.split('/').filter(Boolean).pop() ?? key;
+}
+
+function partByteSize(totalBytes: number, partSize: number, partNumber: number): number {
+	const start = (partNumber - 1) * partSize;
+	const end = Math.min(start + partSize, totalBytes);
+	return Math.max(0, end - start);
+}
+
+function reportUploadProgress(
+	options: UploadObjectOptions | undefined,
+	progress: UploadProgress
+): void {
+	options?.onProgress?.(progress);
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+	if (!signal?.aborted) return;
+	if (signal.reason instanceof Error) {
+		throw signal.reason;
+	}
+	throw createAbortError();
+}
+
+function createAbortError(): DOMException {
+	return new DOMException('Upload cancelled', 'AbortError');
 }
 
 async function readManagementErrorMessage(res: Response): Promise<string | null> {

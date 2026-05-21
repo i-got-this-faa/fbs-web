@@ -182,11 +182,40 @@ export interface DeleteObjectsResult {
 }
 
 // ── Upload ──────────────────────────────────────────────────────────────────
+export type UploadPhase =
+	| 'single'
+	| 'initiating'
+	| 'uploading_parts'
+	| 'completing'
+	| 'aborting'
+	| 'done';
+
+export interface UploadProgress {
+	bucket: string;
+	key: string;
+	fileName: string;
+	loadedBytes: number;
+	totalBytes: number;
+	percent: number;
+	phase: UploadPhase;
+	partNumber?: number;
+	partCount?: number;
+}
+
+export interface UploadObjectOptions {
+	signal?: AbortSignal;
+	onProgress?: (progress: UploadProgress) => void;
+	multipartThresholdBytes?: number;
+	partSizeBytes?: number;
+	concurrency?: number;
+}
+
 export interface UploadObjectRequest {
 	bucket: string;
 	key: string;
 	body: Blob | ArrayBuffer | string;
 	contentType?: string;
+	fileName?: string;
 }
 
 // ── Object Metadata ─────────────────────────────────────────────────────────
@@ -223,7 +252,7 @@ export interface FbsClient {
 	deleteObject(bucket: string, key: string): Promise<void>;
 	getObjectUrl(bucket: string, key: string): string;
 	createPublicObjectUrl(bucket: string, key: string): Promise<PublicObjectUrl>;
-	uploadObject(req: UploadObjectRequest): Promise<void>;
+	uploadObject(req: UploadObjectRequest, options?: UploadObjectOptions): Promise<void>;
 	headObject(bucket: string, key: string): Promise<ObjectMetadata>;
 	// Keys
 	listKeys(): Promise<AccessKey[]>;

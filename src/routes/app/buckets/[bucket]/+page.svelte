@@ -28,7 +28,8 @@
 		InfoIcon,
 		HardDriveIcon,
 		CalendarIcon,
-		CopyIcon
+		CopyIcon,
+		XIcon
 	} from 'lucide-svelte';
 	import { onDestroy } from 'svelte';
 
@@ -178,6 +179,7 @@
 	async function handleDrop(event: DragEvent) {
 		event.preventDefault();
 		isDragging = false;
+		if (objects.isUploading) return;
 		const files = event.dataTransfer?.files;
 		if (!files?.length) return;
 		const success = await objects.upload(files);
@@ -186,6 +188,7 @@
 
 	function handleDragOver(event: DragEvent) {
 		event.preventDefault();
+		if (objects.isUploading) return;
 		isDragging = true;
 	}
 
@@ -307,7 +310,7 @@
 		ondragleave={handleDragLeave}
 		ondrop={handleDrop}
 	>
-		{#if isDragging}
+		{#if isDragging && !objects.isUploading}
 			<div
 				class="absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-accent-500/50 bg-accent-500/5 backdrop-blur-sm"
 			>
@@ -319,13 +322,31 @@
 		{/if}
 
 		{#if objects.isUploading}
-			<div
-				class="mb-4 flex items-center gap-3 rounded-xl border border-accent-500/20 bg-accent-500/5 px-4 py-3"
-			>
-				<div
-					class="h-4 w-4 animate-spin rounded-full border-2 border-accent-500/30 border-t-accent-400"
-				></div>
-				<p class="text-sm text-accent-400">{objects.uploadProgress || 'Uploading...'}</p>
+			<div class="mb-4 rounded-xl border border-accent-500/20 bg-accent-500/5 px-4 py-3">
+				<div class="mb-2 flex items-center gap-3">
+					<div
+						class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-accent-500/30 border-t-accent-400"
+					></div>
+					<p class="min-w-0 flex-1 truncate text-sm text-accent-400">
+						{objects.uploadProgress || 'Uploading...'}
+					</p>
+					<span class="shrink-0 text-xs font-medium text-accent-300">
+						{Math.round(objects.uploadPercent)}%
+					</span>
+					<button
+						onclick={() => objects.cancelUpload()}
+						class="shrink-0 rounded-md p-1.5 text-accent-300 transition-colors hover:bg-accent-500/15 hover:text-accent-100"
+						aria-label="Cancel upload"
+					>
+						<XIcon size={14} />
+					</button>
+				</div>
+				<div class="h-1.5 overflow-hidden rounded-full bg-surface-800">
+					<div
+						class="h-full rounded-full bg-accent-400 transition-[width] duration-150"
+						style:width={objects.uploadPercent + '%'}
+					></div>
+				</div>
 			</div>
 		{/if}
 

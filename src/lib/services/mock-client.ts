@@ -22,6 +22,7 @@ import type {
 	ServerConfig,
 	StorageObject,
 	UpdateKeyRequest,
+	UploadObjectOptions,
 	UploadObjectRequest
 } from '$lib/types/api';
 
@@ -418,18 +419,33 @@ export class MockFbsClient implements FbsClient {
 		};
 	}
 
-	async uploadObject(req: UploadObjectRequest): Promise<void> {
-		await delay(300);
+	async uploadObject(req: UploadObjectRequest, options?: UploadObjectOptions): Promise<void> {
+		throwIfUploadAborted(options?.signal);
 		if (!this.buckets.some((b) => b.name === req.bucket)) {
 			throw new Error(`Bucket "${req.bucket}" not found`);
 		}
 
-		const size =
-			req.body instanceof Blob
-				? req.body.size
-				: typeof req.body === 'string'
-					? new TextEncoder().encode(req.body).length
-					: (req.body as ArrayBuffer).byteLength;
+		const size = mockUploadBodySize(req.body);
+		const fileName = req.fileName ?? req.key.split('/').filter(Boolean).pop() ?? req.key;
+		const report = (loadedBytes: number) => {
+			options?.onProgress?.({
+				bucket: req.bucket,
+				key: req.key,
+				fileName,
+				loadedBytes,
+				totalBytes: size,
+				percent: size === 0 ? 100 : Math.min(100, (loadedBytes / size) * 100),
+				phase: loadedBytes >= size ? 'done' : 'single'
+			});
+		};
+
+		report(0);
+		await delay(120);
+		throwIfUploadAborted(options?.signal);
+		report(Math.floor(size / 2));
+		await delay(180);
+		throwIfUploadAborted(options?.signal);
+		report(size);
 
 		const now = isoNow();
 		const obj: StorageObject = {
@@ -633,4 +649,22 @@ export class MockFbsClient implements FbsClient {
 			totalObjectBytes: objects.reduce((sum, object) => sum + object.size, 0)
 		};
 	}
+}
+
+function mockUploadBodySize(body: Blob | ArrayBuffer | string): number {
+	if (body instanceof Blob) {
+		return body.size;
+	}
+	if (body instanceof ArrayBuffer) {
+		return body.byteLength;
+	}
+	return new TextEncoder().encode(body).length;
+}
+
+function throwIfUploadAborted(signal: AbortSignal | undefined): void {
+	if (!signal?.aborted) return;
+	if (signal.reason instanceof Error) {
+		throw signal.reason;
+	}
+	throw new DOMException('Upload cancelled', 'AbortError');
 }

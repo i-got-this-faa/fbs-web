@@ -125,9 +125,39 @@ export function parseDeleteObjectsResult(xml: string): DeleteObjectsResult {
 	return { deleted };
 }
 
+export function parseInitiateMultipartUploadResult(xml: string): {
+	bucket: string;
+	key: string;
+	uploadId: string;
+} {
+	const doc = parseXml(xml);
+	const uploadId = getTextContent(doc, 'UploadId');
+	if (!uploadId) {
+		throw new Error('Multipart upload response did not include an UploadId');
+	}
+
+	return {
+		bucket: getTextContent(doc, 'Bucket') ?? '',
+		key: getTextContent(doc, 'Key') ?? '',
+		uploadId
+	};
+}
+
 export function buildDeleteObjectsXml(keys: string[], quiet = false): string {
 	const objects = keys.map((key) => `<Object><Key>${escapeXml(key)}</Key></Object>`).join('');
 	return `<Delete><Quiet>${quiet ? 'true' : 'false'}</Quiet>${objects}</Delete>`;
+}
+
+export function buildCompleteMultipartUploadXml(
+	parts: Array<{ partNumber: number; etag: string }>
+): string {
+	const partXml = parts
+		.map(
+			(part) =>
+				`<Part><PartNumber>${part.partNumber}</PartNumber><ETag>${escapeXml(part.etag)}</ETag></Part>`
+		)
+		.join('');
+	return `<CompleteMultipartUpload>${partXml}</CompleteMultipartUpload>`;
 }
 
 function parseXml(xml: string): Document {

@@ -3,7 +3,8 @@ import type {
 	ListObjectsOptions,
 	ObjectListing,
 	ObjectMetadata,
-	StorageObject
+	StorageObject,
+	UploadProgress
 } from '$lib/types/api';
 import { getConnectionContext } from './connection.svelte';
 
@@ -15,6 +16,8 @@ class ObjectsStore {
 	isLoadingMore = $state(false);
 	isUploading = $state(false);
 	uploadProgress = $state('');
+	uploadPercent = $state(0);
+	uploadAbortController = $state<AbortController | null>(null);
 	error = $state<string | null>(null);
 	nextStartAfter = $state<string | null>(null);
 	selectedKeys = $state<string[]>([]);
@@ -145,32 +148,85 @@ class ObjectsStore {
 	async upload(files: FileList | File[]): Promise<boolean> {
 		const client = this.connection.client;
 		if (!client) return false;
+		if (this.isUploading) {
+			this.error = 'An upload is already in progress';
+			return false;
+		}
+
+		const fileArray = Array.from(files);
+		if (fileArray.length === 0) return true;
+
+		const totalBytes = fileArray.reduce((sum, file) => sum + file.size, 0);
+		let completedBytes = 0;
+		let completedFiles = 0;
+		let uploadedAny = false;
+		const abortController = new AbortController();
 
 		this.isUploading = true;
 		this.error = null;
+		this.uploadPercent = 0;
+		this.uploadAbortController = abortController;
 
 		try {
-			const fileArray = Array.from(files);
 			for (let i = 0; i < fileArray.length; i++) {
 				const file = fileArray[i];
 				const key = this.currentPrefix + file.name;
+				let currentFileLoaded = 0;
 				this.uploadProgress = `Uploading ${i + 1}/${fileArray.length}: ${file.name}`;
-				await client.uploadObject({
-					bucket: this.currentBucket,
-					key,
-					body: file,
-					contentType: file.type || 'application/octet-stream'
-				});
+				await client.uploadObject(
+					{
+						bucket: this.currentBucket,
+						key,
+						body: file,
+						contentType: file.type || 'application/octet-stream',
+						fileName: file.name
+					},
+					{
+						signal: abortController.signal,
+						onProgress: (progress) => {
+							currentFileLoaded = Math.min(progress.loadedBytes, file.size);
+							this.uploadPercent = aggregateUploadPercent(
+								completedBytes + currentFileLoaded,
+								totalBytes,
+								completedFiles,
+								fileArray.length
+							);
+							this.uploadProgress = describeUploadProgress(progress, i, fileArray.length);
+						}
+					}
+				);
+				completedBytes += file.size;
+				completedFiles += 1;
+				uploadedAny = true;
+				this.uploadPercent = aggregateUploadPercent(
+					completedBytes,
+					totalBytes,
+					completedFiles,
+					fileArray.length
+				);
 			}
 			await this.load(this.currentBucket, this.currentPrefix);
 			return true;
 		} catch (err) {
-			this.error = err instanceof Error ? err.message : 'Failed to upload file(s)';
+			this.error = isAbortError(err)
+				? 'Upload cancelled'
+				: err instanceof Error
+					? err.message
+					: 'Failed to upload file(s)';
+			if (uploadedAny) {
+				await this.load(this.currentBucket, this.currentPrefix);
+			}
 			return false;
 		} finally {
 			this.isUploading = false;
 			this.uploadProgress = '';
+			this.uploadPercent = 0;
+			this.uploadAbortController = null;
 		}
+	}
+
+	cancelUpload(): void {
+		this.uploadAbortController?.abort();
 	}
 
 	/** Get object metadata via HEAD */
@@ -258,6 +314,43 @@ class ObjectsStore {
 			this.items.length > 0 && this.items.every((object) => this.selectedKeys.includes(object.key))
 		);
 	}
+}
+
+function aggregateUploadPercent(
+	loadedBytes: number,
+	totalBytes: number,
+	completedFiles: number,
+	totalFiles: number
+): number {
+	if (totalBytes > 0) {
+		return Math.min(100, Math.max(0, (loadedBytes / totalBytes) * 100));
+	}
+	return totalFiles === 0 ? 100 : Math.min(100, (completedFiles / totalFiles) * 100);
+}
+
+function describeUploadProgress(
+	progress: UploadProgress,
+	fileIndex: number,
+	totalFiles: number
+): string {
+	const filePosition = `${fileIndex + 1}/${totalFiles}`;
+	if (progress.phase === 'initiating') {
+		return `Starting ${filePosition}: ${progress.fileName}`;
+	}
+	if (progress.phase === 'uploading_parts' && progress.partNumber && progress.partCount) {
+		return `Uploading ${filePosition}: ${progress.fileName} (part ${progress.partNumber}/${progress.partCount})`;
+	}
+	if (progress.phase === 'completing') {
+		return `Completing ${filePosition}: ${progress.fileName}`;
+	}
+	if (progress.phase === 'aborting') {
+		return `Cancelling ${filePosition}: ${progress.fileName}`;
+	}
+	return `Uploading ${filePosition}: ${progress.fileName}`;
+}
+
+function isAbortError(err: unknown): boolean {
+	return err instanceof DOMException && err.name === 'AbortError';
 }
 
 const [internalGetObjects, setInternalObjects] = createContext<ObjectsStore>();
