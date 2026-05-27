@@ -23,15 +23,10 @@
 		'DeleteObject',
 		'DeleteObjects',
 		'CopyObject',
+		'Multipart upload',
 		'Presigned query auth'
 	];
-	const notImplementedS3 = [
-		'Multipart upload',
-		'ACL',
-		'CORS config endpoints',
-		'Bucket policy',
-		'Versioning'
-	];
+	const notImplementedS3 = ['ACL', 'CORS config endpoints', 'Bucket policy', 'Versioning'];
 
 	function handleDisconnect() {
 		connection.disconnect();

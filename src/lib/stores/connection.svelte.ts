@@ -45,6 +45,12 @@ class ConnectionStore {
 				throw new Error('Backend health check failed — server may be down or URL is incorrect.');
 			}
 
+			try {
+				await client.getConfig();
+			} catch {
+				throw new Error('Credentials are invalid.');
+			}
+
 			this.apiUrl = trimmedUrl;
 			this.token = token;
 			this._client = client;
@@ -55,6 +61,13 @@ class ConnectionStore {
 			this.error = err instanceof Error ? err.message : 'Connection failed';
 			this.isConnected = false;
 			this._client = null;
+			this.apiUrl = '';
+			this.token = '';
+			this.useMock = false;
+
+			if (typeof window !== 'undefined') {
+				localStorage.removeItem(STORAGE_KEY);
+			}
 		} finally {
 			this.isConnecting = false;
 		}
