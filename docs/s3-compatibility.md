@@ -24,32 +24,32 @@ security, and scale-out features.
 | Presigned GET URLs (public read) | Via management API; requires signing secret to be configured |
 | ETags | |
 
-## Not Implemented
+## Not Implemented vs Out of Scope
 
-| Category | Feature |
-|---|---|
-| Access control | ACLs (`?acl`) |
-| Access control | Bucket policies (`?policy`) |
-| Access control | CORS configuration endpoints (`?cors`) |
-| Data management | Versioning (`?versions`) |
-| Data management | Object tags (`?tagging`) |
-| Data management | Lifecycle policies |
-| Data management | S3 Object Lock (WORM) |
-| Data management | S3 Inventory |
-| Data management | S3 Select (SQL over objects) |
-| Data management | Batch operations |
-| Replication | CRR / SRR |
-| Encryption | SSE-S3, SSE-KMS, SSE-C |
-| Notifications | SNS / SQS / Lambda event notifications |
-| Website hosting | Static website config (`?website`) |
-| Auth / STS | Security Token Service (AssumeRole, GetSessionToken) |
-| Auth / STS | Web identity federation |
-| Advanced features | Transfer Acceleration |
-| Advanced features | S3 Object Lambda |
-| Advanced features | Multi-Region Access Points |
-| Advanced features | S3 Access Points |
-| Advanced features | Requester Pays |
-| Advanced features | Request route / Outposts |
+| Category | Feature | Status |
+|---|---|---|
+| Access control | ACLs (`?acl`) | Could be added |
+| Access control | Bucket policies (`?policy`) | Could be added |
+| Access control | CORS configuration endpoints (`?cors`) | Could be added |
+| Data management | Versioning (`?versions`) | Could be added |
+| Data management | Object tags (`?tagging`) | Could be added |
+| Data management | Lifecycle policies | Could be added |
+| Data management | S3 Object Lock (WORM) | Could be added |
+| Data management | S3 Inventory | Could be added |
+| Data management | S3 Select (SQL over objects) | Out of scope — query engine |
+| Data management | Batch operations | Could be added |
+| Replication | CRR / SRR | Out of scope — single-node |
+| Encryption | SSE-S3, SSE-KMS, SSE-C | Could be added |
+| Notifications | SNS / SQS / Lambda event notifications | Could be added |
+| Website hosting | Static website config (`?website`) | Could be added |
+| Auth / STS | Security Token Service (AssumeRole, GetSessionToken) | Could be added |
+| Auth / STS | Web identity federation | Could be added |
+| Advanced features | Transfer Acceleration | Out of scope — single-node edge not applicable |
+| Advanced features | S3 Object Lambda | Out of scope — request transform pipeline |
+| Advanced features | Multi-Region Access Points | Out of scope — single-node |
+| Advanced features | S3 Access Points | Out of scope — AWS networking primitive |
+| Advanced features | Requester Pays | Out of scope — no billing model |
+| Advanced features | Request route / Outposts | Out of scope — single-node / no hybrid deployment |
 
 ## Key Architectural Differences
 
@@ -106,11 +106,10 @@ the filesystem provides is what you get.
 |---|---|---|
 | Dependencies | DynamoDB, KMS, load balancers, edge locations | A single Go binary + SQLite + a data directory |
 | Scaling | Multi-region, auto-scaling | Single node |
-| Billing | Per-request, per-byte-metered | None |
-| Metadata | Internal distributed KV store | SQLite with optional in-memory LRU cache |
 | Regions | Global region/az model | Single config string |
+| Billing | Per-request, per-byte-metered | Out of scope — self-hosted |
 | Durability | 11 nines | Filesystem-dependent |
-
+| Metadata | Internal distributed KV store | SQLite with optional in-memory LRU cache |
 ## Design Intent
 
 fbs-core is not trying to be a full S3 replacement. From the docs:
