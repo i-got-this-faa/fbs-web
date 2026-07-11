@@ -79,9 +79,7 @@
 	{/if}
 
 	{#if buckets.isLoading}
-		<div class="rounded-xl border border-surface-800 bg-surface-900">
-			<LoadingSpinner label="Loading buckets..." minHeight="12rem" />
-		</div>
+		<LoadingSpinner label="Loading buckets..." minHeight="12rem" />
 	{:else if buckets.count === 0}
 		<EmptyState
 			icon="🪣"

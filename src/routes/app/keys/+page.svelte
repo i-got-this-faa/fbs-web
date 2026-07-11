@@ -224,9 +224,7 @@
 	{/if}
 
 	{#if keys.isLoading}
-		<div class="rounded-xl border border-surface-800 bg-surface-900">
-			<LoadingSpinner label="Loading keys..." minHeight="12rem" />
-		</div>
+		<LoadingSpinner label="Loading keys..." minHeight="12rem" />
 	{:else if keys.items.length === 0}
 		<EmptyState
 			icon="🔑"

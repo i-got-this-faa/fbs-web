@@ -351,9 +351,7 @@
 		{/if}
 
 		{#if objects.isLoading}
-			<div class="rounded-xl border border-surface-800 bg-surface-900">
-				<LoadingSpinner label="Loading objects..." minHeight="14rem" />
-			</div>
+			<LoadingSpinner label="Loading objects..." minHeight="14rem" />
 		{:else if objects.isEmpty}
 			<EmptyState
 				icon={FolderOpenIcon}
