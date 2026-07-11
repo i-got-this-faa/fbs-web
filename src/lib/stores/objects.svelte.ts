@@ -8,9 +8,28 @@ import type {
 } from '$lib/types/api';
 import { getConnectionContext } from './connection.svelte';
 
+/** Aggregated stats for a common-prefix "folder" */
+export interface FolderStats {
+	size: number;
+	objectCount: number;
+	updatedAt: string | null;
+	/** True when listing was truncated — counts/size are lower bounds */
+	isPartial: boolean;
+	isLoading: boolean;
+	/** True when the stats request failed (distinct from empty folder) */
+	error?: boolean;
+}
+
+const FOLDER_STATS_PAGE_SIZE = 500;
+const FOLDER_STATS_CONCURRENCY = 4;
+/** Cap pages per folder to limit API amplification on wide directories */
+const FOLDER_STATS_MAX_PAGES = 2;
+
 class ObjectsStore {
 	items = $state<StorageObject[]>([]);
 	commonPrefixes = $state<string[]>([]);
+	/** Stats keyed by common-prefix path (e.g. "docs/") */
+	folderStats = $state<Record<string, FolderStats>>({});
 	isTruncated = $state(false);
 	isLoading = $state(false);
 	isLoadingMore = $state(false);
@@ -25,6 +44,10 @@ class ObjectsStore {
 	currentBucket = $state('');
 	currentPrefix = $state('');
 
+	/** Generation counter so in-flight folder-stat jobs ignore stale results */
+	private folderStatsGeneration = 0;
+	/** Generation counter so concurrent same-prefix loads ignore stale results */
+	private loadGeneration = 0;
 	private connection = getConnectionContext();
 
 	async load(bucket: string, prefix = '', startAfter?: string, append = false): Promise<void> {
@@ -36,7 +59,17 @@ class ObjectsStore {
 		this.currentPrefix = prefix;
 		if (!append && prefixChanged) {
 			this.clearSelection();
+			// Drop previous listing so navigation never shows the wrong folder
+			this.items = [];
+			this.commonPrefixes = [];
+			this.folderStats = {};
+			this.isTruncated = false;
+			this.nextStartAfter = null;
+			this.folderStatsGeneration += 1;
 		}
+
+		const generation = ++this.loadGeneration;
+
 		if (append) {
 			this.isLoadingMore = true;
 		} else {
@@ -53,21 +86,164 @@ class ObjectsStore {
 			};
 			const result: ObjectListing = await client.listObjects(bucket, opts);
 
+			// Ignore late responses from superseded loads or navigation away
+			if (generation !== this.loadGeneration) return;
+			if (this.currentBucket !== bucket || this.currentPrefix !== prefix) return;
+
 			this.items = append ? [...this.items, ...result.objects] : result.objects;
 			this.commonPrefixes = append
 				? [...new Set([...this.commonPrefixes, ...result.commonPrefixes])]
 				: result.commonPrefixes;
 			this.isTruncated = result.isTruncated;
 			this.nextStartAfter = result.nextStartAfter;
+
+			if (!append) {
+				if (prefixChanged) {
+					// Fresh folder → recompute all folder stats
+					this.folderStatsGeneration += 1;
+					this.folderStats = {};
+					void this.loadFolderStats(bucket, this.commonPrefixes);
+				} else {
+					// Same-prefix refresh: keep good cached stats, only fetch missing/failed
+					const present = new Set(this.commonPrefixes);
+					const kept: Record<string, FolderStats> = {};
+					for (const [path, stats] of Object.entries(this.folderStats)) {
+						if (present.has(path) && !stats.isLoading && !stats.error) {
+							kept[path] = stats;
+						}
+					}
+					this.folderStats = kept;
+					const missing = this.commonPrefixes.filter((p) => !kept[p]);
+					if (missing.length > 0) void this.loadFolderStats(bucket, missing);
+				}
+			} else if (result.commonPrefixes.length > 0) {
+				const missing = result.commonPrefixes.filter((p) => !this.folderStats[p]);
+				if (missing.length > 0) void this.loadFolderStats(bucket, missing);
+			}
 		} catch (err) {
+			if (generation !== this.loadGeneration) return;
+			if (this.currentBucket !== bucket || this.currentPrefix !== prefix) return;
 			this.error = err instanceof Error ? err.message : 'Failed to load objects';
 		} finally {
-			if (append) {
-				this.isLoadingMore = false;
-			} else {
-				this.isLoading = false;
+			if (generation === this.loadGeneration) {
+				if (append) {
+					this.isLoadingMore = false;
+				} else {
+					this.isLoading = false;
+				}
 			}
 		}
+	}
+
+	/** Fetch size / object count / latest modified for each common-prefix folder */
+	private async loadFolderStats(bucket: string, prefixes: string[]): Promise<void> {
+		const client = this.connection.client;
+		if (!client || prefixes.length === 0) return;
+
+		const generation = this.folderStatsGeneration;
+		// Only fetch prefixes we don't already have (or that aren't mid-load)
+		const pending = prefixes.filter((prefix) => {
+			const existing = this.folderStats[prefix];
+			return !existing;
+		});
+
+		// Mark folders as loading so the UI can show placeholders
+		if (pending.length === 0) return;
+
+		const next = { ...this.folderStats };
+		for (const prefix of pending) {
+			next[prefix] = {
+				size: 0,
+				objectCount: 0,
+				updatedAt: null,
+				isPartial: false,
+				isLoading: true
+			};
+		}
+		this.folderStats = next;
+
+		let cursor = 0;
+		const workers = Array.from(
+			{ length: Math.min(FOLDER_STATS_CONCURRENCY, pending.length) },
+			async () => {
+				while (cursor < pending.length) {
+					const index = cursor++;
+					const prefix = pending[index];
+					if (!prefix) return;
+					if (generation !== this.folderStatsGeneration) return;
+
+					try {
+						const stats = await this.fetchFolderStats(bucket, prefix);
+						if (generation !== this.folderStatsGeneration) return;
+						if (this.currentBucket !== bucket) return;
+						this.folderStats = { ...this.folderStats, [prefix]: stats };
+					} catch {
+						if (generation !== this.folderStatsGeneration) return;
+						this.folderStats = {
+							...this.folderStats,
+							[prefix]: {
+								size: 0,
+								objectCount: 0,
+								updatedAt: null,
+								isPartial: false,
+								isLoading: false,
+								error: true
+							}
+						};
+					}
+				}
+			}
+		);
+
+		await Promise.all(workers);
+	}
+
+	private async fetchFolderStats(bucket: string, prefix: string): Promise<FolderStats> {
+		const client = this.connection.client;
+		if (!client) {
+			return {
+				size: 0,
+				objectCount: 0,
+				updatedAt: null,
+				isPartial: false,
+				isLoading: false,
+				error: true
+			};
+		}
+
+		let size = 0;
+		let objectCount = 0;
+		let updatedAt: string | null = null;
+		let startAfter: string | undefined;
+		let isPartial = false;
+
+		for (let page = 0; page < FOLDER_STATS_MAX_PAGES; page++) {
+			const result = await client.listObjects(bucket, {
+				prefix,
+				startAfter,
+				maxKeys: FOLDER_STATS_PAGE_SIZE
+			});
+
+			for (const object of result.objects) {
+				size += object.size;
+				objectCount += 1;
+				if (!updatedAt || object.updatedAt > updatedAt) {
+					updatedAt = object.updatedAt;
+				}
+			}
+
+			if (!result.isTruncated || !result.nextStartAfter) {
+				isPartial = false;
+				break;
+			}
+
+			startAfter = result.nextStartAfter;
+			if (page === FOLDER_STATS_MAX_PAGES - 1) {
+				isPartial = true;
+			}
+		}
+
+		return { size, objectCount, updatedAt, isPartial, isLoading: false };
 	}
 
 	async remove(key: string): Promise<boolean> {
@@ -252,6 +428,22 @@ class ObjectsStore {
 		this.selectedKeys = [];
 	}
 
+	/** Replace selection with the given keys (e.g. currently filtered/visible rows). */
+	selectKeys(keys: string[]): void {
+		this.selectedKeys = [...keys];
+	}
+
+	/** Remove the given keys from the current selection. */
+	deselectKeys(keys: string[]): void {
+		const remove = new Set(keys);
+		this.selectedKeys = this.selectedKeys.filter((key) => !remove.has(key));
+	}
+
+	/** True when every key is selected (and keys is non-empty). */
+	areAllSelected(keys: string[]): boolean {
+		return keys.length > 0 && keys.every((key) => this.selectedKeys.includes(key));
+	}
+
 	selectVisible(): void {
 		this.selectedKeys = this.items.map((object) => object.key);
 	}
@@ -267,9 +459,11 @@ class ObjectsStore {
 		document.body.removeChild(a);
 	}
 
-	/** Navigate into a folder (prefix) */
+	/** Navigate into a folder (prefix). No-ops if already there. */
 	navigateToPrefix(prefix: string): void {
-		this.load(this.currentBucket, prefix);
+		if (!this.currentBucket) return;
+		if (prefix === this.currentPrefix) return;
+		void this.load(this.currentBucket, prefix);
 	}
 
 	loadMore(): void {
@@ -310,9 +504,7 @@ class ObjectsStore {
 	}
 
 	get allVisibleSelected(): boolean {
-		return (
-			this.items.length > 0 && this.items.every((object) => this.selectedKeys.includes(object.key))
-		);
+		return this.areAllSelected(this.items.map((object) => object.key));
 	}
 }
 

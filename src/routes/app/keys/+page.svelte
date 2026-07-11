@@ -143,9 +143,10 @@
 
 <svelte:head><title>Access Keys — FBS</title></svelte:head>
 
-<div class="mx-auto max-w-5xl space-y-5">
+<!-- Full-height shell: page never scrolls; keys table fills remaining space then scrolls -->
+<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
 	{#if keys.lastCreatedSecret}
-		<div class="rounded-xl border border-warning-500/20 bg-warning-500/5 p-5">
+		<div class="shrink-0 rounded-xl border border-warning-500/20 bg-warning-500/5 p-5">
 			<div class="mb-4 flex items-start justify-between gap-4">
 				<div>
 					<h2 class="text-sm font-semibold text-warning-300">New Credentials</h2>
@@ -218,90 +219,98 @@
 	{/if}
 
 	{#if keys.error && !createError}
-		<div class="rounded-xl border border-danger-500/20 bg-danger-500/5 p-4 text-sm text-danger-400">
+		<div
+			class="shrink-0 rounded-xl border border-danger-500/20 bg-danger-500/5 p-4 text-sm text-danger-400"
+		>
 			{keys.error}
 		</div>
 	{/if}
 
-	{#if keys.isLoading}
-		<LoadingSpinner label="Loading keys..." minHeight="12rem" />
-	{:else if keys.items.length === 0}
-		<EmptyState
-			icon="🔑"
-			title="No access keys"
-			description="Create an access key for API clients."
-		>
-			{#snippet action()}
-				<button
-					onclick={openCreateModal}
-					class="rounded-lg bg-accent-500/15 px-4 py-2 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
+	<div
+		class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-surface-800 bg-surface-900"
+	>
+		{#if keys.isLoading}
+			<LoadingSpinner label="Loading keys..." minHeight="12rem" />
+		{:else if keys.items.length === 0}
+			<div class="p-6">
+				<EmptyState
+					icon="🔑"
+					title="No access keys"
+					description="Create an access key for API clients."
 				>
-					Create Key
-				</button>
-			{/snippet}
-		</EmptyState>
-	{:else}
-		<div class="overflow-x-auto rounded-xl border border-surface-800 bg-surface-900">
-			<div class="min-w-[680px]">
-				<div
-					class="grid grid-cols-[1fr_110px_110px_110px_150px] items-center gap-3 border-b border-surface-800 px-4 py-2.5 text-xs font-medium text-surface-500 uppercase"
-				>
-					<span>Name</span>
-					<span>Role</span>
-					<span>Status</span>
-					<span class="text-right">Created</span>
-					<span class="text-right">Actions</span>
-				</div>
-				{#each keys.items as key (key.id)}
-					<div
-						class="group grid grid-cols-[1fr_110px_110px_110px_150px] items-center gap-3 border-b border-surface-800/50 px-4 py-3 hover:bg-surface-850"
-					>
-						<div class="min-w-0">
-							<p class="truncate text-sm font-medium text-surface-200">{key.displayName}</p>
-							<p class="truncate text-xs text-surface-600">{key.sigV4AccessKeyId}</p>
-						</div>
-						<span class="text-sm text-surface-400 capitalize">{key.role}</span>
-						<StatusBadge status={key.isActive ? 'active' : 'inactive'} />
-						<span class="text-right text-xs text-surface-500">{formatDate(key.createdAt)}</span>
-						<div class="flex justify-end gap-1">
-							<button
-								onclick={() => openRenameModal(key)}
-								class="rounded-md px-2 py-1 text-xs text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-200"
-							>
-								Edit
-							</button>
-							<button
-								onclick={() => handleToggleActive(key)}
-								class="rounded-md px-2 py-1 text-xs text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-200"
-							>
-								{key.isActive ? 'Deactivate' : 'Activate'}
-							</button>
-							<button
-								onclick={() => (deleteTarget = key.id)}
-								class="rounded-md p-1.5 text-surface-600 transition-all hover:bg-danger-500/10 hover:text-danger-400"
-								aria-label="Delete {key.displayName}"
-							>
-								<svg
-									width="14"
-									height="14"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-								>
-									<path d="M3 6h18" />
-									<path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-									<path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-								</svg>
-							</button>
-						</div>
-					</div>
-				{/each}
+					{#snippet action()}
+						<button
+							onclick={openCreateModal}
+							class="rounded-lg bg-accent-500/15 px-4 py-2 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
+						>
+							Create Key
+						</button>
+					{/snippet}
+				</EmptyState>
 			</div>
-		</div>
-	{/if}
+		{:else}
+			<div class="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
+				<div class="min-w-[680px]">
+					<div
+						class="sticky top-0 z-10 grid grid-cols-[1fr_110px_110px_110px_150px] items-center gap-3 border-b border-surface-800 bg-surface-900 px-4 py-2.5 text-xs font-medium text-surface-500 uppercase"
+					>
+						<span>Name</span>
+						<span>Role</span>
+						<span>Status</span>
+						<span class="text-right">Created</span>
+						<span class="text-right">Actions</span>
+					</div>
+					{#each keys.items as key (key.id)}
+						<div
+							class="group grid grid-cols-[1fr_110px_110px_110px_150px] items-center gap-3 border-b border-surface-800/50 px-4 py-3 hover:bg-surface-850"
+						>
+							<div class="min-w-0">
+								<p class="truncate text-sm font-medium text-surface-200">{key.displayName}</p>
+								<p class="truncate text-xs text-surface-600">{key.sigV4AccessKeyId}</p>
+							</div>
+							<span class="text-sm text-surface-400 capitalize">{key.role}</span>
+							<StatusBadge status={key.isActive ? 'active' : 'inactive'} />
+							<span class="text-right text-xs text-surface-500">{formatDate(key.createdAt)}</span>
+							<div class="flex justify-end gap-1">
+								<button
+									onclick={() => openRenameModal(key)}
+									class="rounded-md px-2 py-1 text-xs text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-200"
+								>
+									Edit
+								</button>
+								<button
+									onclick={() => handleToggleActive(key)}
+									class="rounded-md px-2 py-1 text-xs text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-200"
+								>
+									{key.isActive ? 'Deactivate' : 'Activate'}
+								</button>
+								<button
+									onclick={() => (deleteTarget = key.id)}
+									class="rounded-md p-1.5 text-surface-600 transition-all hover:bg-danger-500/10 hover:text-danger-400"
+									aria-label="Delete {key.displayName}"
+								>
+									<svg
+										width="14"
+										height="14"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									>
+										<path d="M3 6h18" />
+										<path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+										<path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+									</svg>
+								</button>
+							</div>
+						</div>
+					{/each}
+				</div>
+			</div>
+		{/if}
+	</div>
 </div>
 
 <Modal

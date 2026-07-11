@@ -40,11 +40,7 @@
 		if (isRefreshing) return;
 		isRefreshing = true;
 		try {
-			await Promise.all([
-				dashboard.load(),
-				buckets.load(),
-				server.loadActivity({ limit: 50 })
-			]);
+			await Promise.all([dashboard.load(), buckets.load(), server.loadActivity({ limit: 50 })]);
 		} finally {
 			isRefreshing = false;
 		}
