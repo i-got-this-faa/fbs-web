@@ -5,24 +5,50 @@
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import { getBucketsContext } from '$lib/stores/buckets.svelte';
 	import { getDashboardContext } from '$lib/stores/dashboard.svelte';
+	import { getPageActionsContext } from '$lib/stores/page-actions.svelte';
 	import { getServerContext } from '$lib/stores/server.svelte';
 	import type { ActivityAction } from '$lib/types/api';
 	import { formatBytes, formatDate, timeAgo } from '$lib/utils/format';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 
 	const dashboard = getDashboardContext();
 	const buckets = getBucketsContext();
 	const server = getServerContext();
+	const pageActions = getPageActionsContext();
+
+	let isRefreshing = $state(false);
 
 	const largestBuckets = $derived(
 		[...buckets.items].sort((a, b) => (b.totalObjectBytes ?? 0) - (a.totalObjectBytes ?? 0))
 	);
 
 	onMount(() => {
-		dashboard.load();
-		buckets.load();
-		server.loadActivity({ limit: 50 });
+		void refresh();
 	});
+
+	// Re-register so the button label/disabled state stay in sync while refreshing
+	$effect(() => {
+		void isRefreshing;
+		pageActions.setActions(topBarActions);
+	});
+
+	onDestroy(() => {
+		pageActions.clearActions();
+	});
+
+	async function refresh() {
+		if (isRefreshing) return;
+		isRefreshing = true;
+		try {
+			await Promise.all([
+				dashboard.load(),
+				buckets.load(),
+				server.loadActivity({ limit: 50 })
+			]);
+		} finally {
+			isRefreshing = false;
+		}
+	}
 
 	function activityLabel(action: ActivityAction): string {
 		const labels: Record<string, string> = {
@@ -38,6 +64,31 @@
 		return labels[action] ?? action.replaceAll('_', ' ');
 	}
 </script>
+
+{#snippet topBarActions()}
+	<button
+		onclick={() => void refresh()}
+		disabled={isRefreshing}
+		class="inline-flex items-center gap-1.5 rounded-lg bg-accent-500/15 px-3.5 py-1.5 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25 disabled:opacity-50"
+	>
+		<svg
+			class="h-3.5 w-3.5 {isRefreshing ? 'animate-spin' : ''}"
+			width="14"
+			height="14"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			aria-hidden="true"
+		>
+			<path d="M21 12a9 9 0 1 1-2.64-6.36" />
+			<polyline points="21 3 21 9 15 9" />
+		</svg>
+		{isRefreshing ? 'Refreshing…' : 'Refresh'}
+	</button>
+{/snippet}
 
 <svelte:head>
 	<title>Dashboard — FBS</title>
