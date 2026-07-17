@@ -154,18 +154,8 @@
 		const client = connection.client;
 		if (!client) return '';
 
-		try {
-			const publicUrl = await client.createPublicObjectUrl(bucketName, target.key, expiresIn);
-			return publicUrl.url;
-		} catch (err) {
-			const msg = err instanceof Error ? err.message : '';
-			// Fallback to maximum standard TTL of 24h if it exceeds maximum TTL and user wanted a large duration
-			if (msg.includes('exceeds maximum') && expiresIn > 86400) {
-				const fallbackUrl = await client.createPublicObjectUrl(bucketName, target.key, 86400);
-				return fallbackUrl.url;
-			}
-			throw err;
-		}
+		const publicUrl = await client.createPublicObjectUrl(bucketName, target.key, expiresIn);
+		return publicUrl.url;
 	}
 
 	function triggerUpload() {
