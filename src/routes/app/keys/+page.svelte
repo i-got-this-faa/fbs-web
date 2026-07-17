@@ -250,64 +250,76 @@
 			</div>
 		{:else}
 			<div class="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
-				<div class="min-w-[680px]">
-					<div
-						class="sticky top-0 z-10 grid grid-cols-[1fr_110px_110px_110px_150px] items-center gap-3 border-b border-surface-800 bg-surface-900 px-4 py-2.5 text-xs font-medium text-surface-500 uppercase"
-					>
-						<span>Name</span>
-						<span>Role</span>
-						<span>Status</span>
-						<span class="text-right">Created</span>
-						<span class="text-right">Actions</span>
-					</div>
-					{#each keys.items as key (key.id)}
-						<div
-							class="group grid grid-cols-[1fr_110px_110px_110px_150px] items-center gap-3 border-b border-surface-800/50 px-4 py-3 hover:bg-surface-850"
+				<table class="w-full border-collapse text-left text-xs">
+					<thead>
+						<tr
+							class="sticky top-0 z-10 border-b border-surface-800 bg-surface-900 text-[10px] font-semibold tracking-wider text-surface-500 uppercase"
 						>
-							<div class="min-w-0">
-								<p class="truncate text-sm font-medium text-surface-200">{key.displayName}</p>
-								<p class="truncate text-xs text-surface-600">{key.sigV4AccessKeyId}</p>
-							</div>
-							<span class="text-sm text-surface-400 capitalize">{key.role}</span>
-							<StatusBadge status={key.isActive ? 'active' : 'inactive'} />
-							<span class="text-right text-xs text-surface-500">{formatDate(key.createdAt)}</span>
-							<div class="flex justify-end gap-1">
-								<button
-									onclick={() => openRenameModal(key)}
-									class="rounded-md px-2 py-1 text-xs text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-200"
-								>
-									Edit
-								</button>
-								<button
-									onclick={() => handleToggleActive(key)}
-									class="rounded-md px-2 py-1 text-xs text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-200"
-								>
-									{key.isActive ? 'Deactivate' : 'Activate'}
-								</button>
-								<button
-									onclick={() => (deleteTarget = key.id)}
-									class="rounded-md p-1.5 text-surface-600 transition-all hover:bg-danger-500/10 hover:text-danger-400"
-									aria-label="Delete {key.displayName}"
-								>
-									<svg
-										width="14"
-										height="14"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-									>
-										<path d="M3 6h18" />
-										<path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-										<path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-									</svg>
-								</button>
-							</div>
-						</div>
-					{/each}
-				</div>
+							<th class="px-4 py-3 font-medium">Name</th>
+							<th class="px-4 py-3 font-medium">Role</th>
+							<th class="px-4 py-3 font-medium">Status</th>
+							<th class="px-4 py-3 text-right font-medium">Created</th>
+							<th class="px-4 py-3 text-right font-medium">Actions</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-surface-850">
+						{#each keys.items as key (key.id)}
+							<tr class="group hover:bg-surface-850/30">
+								<td class="px-4 py-3 font-medium">
+									<div class="min-w-0">
+										<p class="truncate text-sm font-medium text-surface-200">{key.displayName}</p>
+										<p class="truncate text-xs text-surface-600">{key.sigV4AccessKeyId}</p>
+									</div>
+								</td>
+								<td class="px-4 py-3 text-sm text-surface-400 capitalize">
+									{key.role}
+								</td>
+								<td class="px-4 py-3">
+									<StatusBadge status={key.isActive ? 'active' : 'inactive'} />
+								</td>
+								<td class="px-4 py-3 text-right text-xs whitespace-nowrap text-surface-500">
+									{formatDate(key.createdAt)}
+								</td>
+								<td class="px-4 py-3 text-right">
+									<div class="flex justify-end gap-1.5">
+										<button
+											onclick={() => openRenameModal(key)}
+											class="rounded-md px-2 py-1 text-xs text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-200"
+										>
+											Edit
+										</button>
+										<button
+											onclick={() => handleToggleActive(key)}
+											class="w-20 rounded-md px-2 py-1 text-center text-xs text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-200"
+										>
+											{key.isActive ? 'Deactivate' : 'Activate'}
+										</button>
+										<button
+											onclick={() => (deleteTarget = key.id)}
+											class="rounded-md p-1.5 text-surface-600 transition-all hover:bg-danger-500/10 hover:text-danger-400"
+											aria-label="Delete {key.displayName}"
+										>
+											<svg
+												width="14"
+												height="14"
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="2"
+												stroke-linecap="round"
+												stroke-linejoin="round"
+											>
+												<path d="M3 6h18" />
+												<path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+												<path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+											</svg>
+										</button>
+									</div>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
 			</div>
 		{/if}
 	</div>

@@ -55,7 +55,7 @@
 			</div>
 		</dl>
 
-		<div class="flex justify-end gap-3 pt-4">
+		<div class="mt-4 flex justify-end gap-3 border-t border-surface-800/60 pt-4">
 			<button
 				type="button"
 				onclick={onclose}
