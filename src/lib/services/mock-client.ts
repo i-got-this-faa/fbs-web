@@ -23,7 +23,10 @@ import type {
 	StorageObject,
 	UpdateKeyRequest,
 	UploadObjectOptions,
-	UploadObjectRequest
+	UploadObjectRequest,
+	BucketGrant,
+	CreateBucketGrantRequest,
+	UpdateBucketGrantRequest
 } from '$lib/types/api';
 
 /** Simulates network delay */
@@ -241,6 +244,32 @@ export class MockFbsClient implements FbsClient {
 	private buckets = [...MOCK_BUCKETS];
 	private objects = [...MOCK_OBJECTS];
 	private keys = [...MOCK_KEYS];
+	private grants: BucketGrant[] = [
+		{
+			id: 'gnt_001',
+			bucket: 'media-assets',
+			granteeUserId: 'usr_002',
+			action: 's3:GetObject',
+			keyPrefix: 'images/',
+			isActive: true,
+			createdBy: 'usr_001',
+			note: 'Read-only access to images folder',
+			createdAt: isoAgo(10),
+			updatedAt: isoAgo(10)
+		},
+		{
+			id: 'gnt_002',
+			bucket: 'media-assets',
+			granteeUserId: 'usr_052', // dummy user
+			action: 's3:ListBucket',
+			keyPrefix: 'images/',
+			isActive: true,
+			createdBy: 'usr_001',
+			note: 'List access to images folder',
+			createdAt: isoAgo(10),
+			updatedAt: isoAgo(10)
+		}
+	];
 
 	async healthCheck(): Promise<boolean> {
 		await delay(100);
@@ -405,17 +434,24 @@ export class MockFbsClient implements FbsClient {
 		return `mock://localhost/${bucket}/${key}`;
 	}
 
-	async createPublicObjectUrl(bucket: string, key: string): Promise<PublicObjectUrl> {
+	async createPublicObjectUrl(
+		bucket: string,
+		key: string,
+		expiresInSeconds?: number
+	): Promise<PublicObjectUrl> {
 		await delay();
 		if (!this.objects.some((object) => object.bucketName === bucket && object.key === key)) {
 			throw new Error(`Object "${key}" not found in bucket "${bucket}"`);
 		}
 
-		const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+		const seconds = expiresInSeconds ?? 3600;
+		const expiresAt = new Date(Date.now() + seconds * 1000).toISOString();
 		return {
-			url: this.getObjectUrl(bucket, key),
+			url:
+				this.getObjectUrl(bucket, key) +
+				`?expires=${Math.floor((Date.now() + seconds * 1000) / 1000)}&signature=mock-signature`,
 			expiresAt,
-			cacheControl: 'public, max-age=3600, must-revalidate'
+			cacheControl: `public, max-age=${seconds}, must-revalidate`
 		};
 	}
 
@@ -639,6 +675,74 @@ export class MockFbsClient implements FbsClient {
 				.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 				.slice(0, 5)
 		};
+	}
+
+	// ── Grants (mini-IAM) ────────────────────────────────────────────────
+	async listBucketGrants(bucket: string): Promise<BucketGrant[]> {
+		await delay();
+		return this.grants.filter((g) => g.bucket === bucket);
+	}
+
+	async createBucketGrants(bucket: string, req: CreateBucketGrantRequest): Promise<BucketGrant[]> {
+		await delay();
+		let granteeUserId = req.granteeUserId || '';
+		if (req.granteeAccessKeyId) {
+			const foundKey = this.keys.find(
+				(k) =>
+					k.accessKeyId === req.granteeAccessKeyId || k.sigV4AccessKeyId === req.granteeAccessKeyId
+			);
+			if (foundKey) granteeUserId = foundKey.id;
+			else granteeUserId = 'usr_unknown';
+		}
+		const created: BucketGrant[] = req.actions.map((action) => ({
+			id: `gnt_${crypto.randomUUID()}`,
+			bucket,
+			granteeUserId,
+			action,
+			keyPrefix: req.keyPrefix,
+			isActive: true,
+			createdBy: 'usr_001',
+			note: req.note,
+			createdAt: isoNow(),
+			updatedAt: isoNow()
+		}));
+		this.grants.push(...created);
+		return created;
+	}
+
+	async updateBucketGrant(
+		bucket: string,
+		id: string,
+		req: UpdateBucketGrantRequest
+	): Promise<BucketGrant> {
+		await delay();
+		const grant = this.grants.find((g) => g.id === id);
+		if (!grant) throw new Error(`Grant "${id}" not found`);
+		if (req.keyPrefix !== undefined) grant.keyPrefix = req.keyPrefix;
+		if (req.isActive !== undefined) grant.isActive = req.isActive;
+		if (req.note !== undefined) grant.note = req.note;
+		grant.updatedAt = isoNow();
+		return { ...grant };
+	}
+
+	async deleteBucketGrant(bucket: string, id: string): Promise<void> {
+		await delay();
+		const idx = this.grants.findIndex((g) => g.id === id);
+		if (idx === -1) throw new Error(`Grant "${id}" not found`);
+		this.grants.splice(idx, 1);
+	}
+
+	async listMyGrants(): Promise<BucketGrant[]> {
+		await delay();
+		return this.grants.filter((g) => g.granteeUserId === 'usr_001'); // Assume we are usr_001 in mock mode
+	}
+
+	async transferBucketOwnership(bucket: string, newOwnerUserId: string): Promise<Bucket> {
+		await delay();
+		const b = this.buckets.find((x) => x.name === bucket);
+		if (!b) throw new Error(`Bucket "${bucket}" not found`);
+		b.ownerId = newOwnerUserId;
+		return this.summarizeBucket(b);
 	}
 
 	private summarizeBucket(bucket: Bucket): Bucket {

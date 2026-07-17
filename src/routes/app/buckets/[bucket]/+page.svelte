@@ -6,9 +6,12 @@
 	import CopyObjectModal from '$lib/components/CopyObjectModal.svelte';
 	import ObjectBrowser from '$lib/components/object-browser/ObjectBrowser.svelte';
 	import ObjectMetadataModal from '$lib/components/ObjectMetadataModal.svelte';
+	import DownloadOptionsModal from '$lib/components/DownloadOptionsModal.svelte';
+	import BucketGrants from '$lib/components/BucketGrants.svelte';
 	import { getBucketsContext } from '$lib/stores/buckets.svelte';
 	import { getObjectsContext } from '$lib/stores/objects.svelte';
 	import { getPageActionsContext } from '$lib/stores/page-actions.svelte';
+	import { getConnectionContext } from '$lib/stores/connection.svelte';
 	import type { ObjectMetadata, StorageObject } from '$lib/types/api';
 	import { formatBytes, formatDate } from '$lib/utils/format';
 	import { CalendarIcon, FolderIcon, HardDriveIcon, UploadIcon, XIcon } from 'lucide-svelte';
@@ -17,12 +20,14 @@
 	const buckets = getBucketsContext();
 	const objects = getObjectsContext();
 	const pageActions = getPageActionsContext();
+	const connection = getConnectionContext();
 	const bucketName = $derived(page.params.bucket ?? '');
 	const selectedCount = $derived(objects.selectedKeys.length);
 	const bucketSummary = $derived(buckets.selected?.name === bucketName ? buckets.selected : null);
 	const summaryObjectCount = $derived(bucketSummary?.objectCount ?? 0);
 	const summaryBytes = $derived(bucketSummary?.totalObjectBytes ?? 0);
 
+	let activeTab = $state<'objects' | 'permissions'>('objects');
 	let deleteBucketOpen = $state(false);
 	let deleteSelectedOpen = $state(false);
 	let copyTarget = $state<StorageObject | null>(null);
@@ -35,6 +40,8 @@
 	let metadataTarget = $state<StorageObject | null>(null);
 	let metadataResult = $state<ObjectMetadata | null>(null);
 	let isLoadingMetadata = $state(false);
+
+	let downloadTarget = $state<StorageObject | null>(null);
 
 	let fileInput: HTMLInputElement | undefined = $state();
 	let isDragging = $state(false);
@@ -137,6 +144,30 @@
 		isLoadingMetadata = false;
 	}
 
+	function closeDownloadModal() {
+		downloadTarget = null;
+	}
+
+	async function handleGenerateLink(expiresIn: number): Promise<string> {
+		const target = downloadTarget || metadataTarget;
+		if (!target || !bucketName) return '';
+		const client = connection.client;
+		if (!client) return '';
+
+		try {
+			const publicUrl = await client.createPublicObjectUrl(bucketName, target.key, expiresIn);
+			return publicUrl.url;
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : '';
+			// Fallback to maximum standard TTL of 24h if it exceeds maximum TTL and user wanted a large duration
+			if (msg.includes('exceeds maximum') && expiresIn > 86400) {
+				const fallbackUrl = await client.createPublicObjectUrl(bucketName, target.key, 86400);
+				return fallbackUrl.url;
+			}
+			throw err;
+		}
+	}
+
 	function triggerUpload() {
 		fileInput?.click();
 	}
@@ -204,22 +235,24 @@
 
 	<!-- Action Buttons -->
 	<div class="flex items-center gap-2">
-		{#if selectedCount > 0}
+		{#if activeTab === 'objects'}
+			{#if selectedCount > 0}
+				<button
+					onclick={() => (deleteSelectedOpen = true)}
+					class="rounded-lg bg-danger-500/15 px-3.5 py-1.5 text-sm font-medium text-danger-400 transition-colors hover:bg-danger-500/25"
+				>
+					Delete Selected ({selectedCount})
+				</button>
+			{/if}
 			<button
-				onclick={() => (deleteSelectedOpen = true)}
-				class="rounded-lg bg-danger-500/15 px-3.5 py-1.5 text-sm font-medium text-danger-400 transition-colors hover:bg-danger-500/25"
+				onclick={triggerUpload}
+				disabled={objects.isUploading}
+				class="flex items-center gap-1.5 rounded-lg bg-accent-500/15 px-3.5 py-1.5 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25 disabled:opacity-50"
 			>
-				Delete Selected ({selectedCount})
+				<UploadIcon size={14} />
+				{objects.isUploading ? 'Uploading...' : 'Upload'}
 			</button>
 		{/if}
-		<button
-			onclick={triggerUpload}
-			disabled={objects.isUploading}
-			class="flex items-center gap-1.5 rounded-lg bg-accent-500/15 px-3.5 py-1.5 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25 disabled:opacity-50"
-		>
-			<UploadIcon size={14} />
-			{objects.isUploading ? 'Uploading...' : 'Upload'}
-		</button>
 		<button
 			onclick={() => (deleteBucketOpen = true)}
 			class="rounded-lg bg-danger-500/15 px-3.5 py-1.5 text-sm font-medium text-danger-400 transition-colors hover:bg-danger-500/25"
@@ -276,37 +309,65 @@
 		</div>
 	{/if}
 
-	<div
-		class="relative flex min-h-0 flex-1 flex-col overflow-hidden"
-		role="region"
-		aria-label="Object browser"
-		ondragover={handleDragOver}
-		ondragleave={handleDragLeave}
-		ondrop={handleDrop}
-	>
-		{#if isDragging && !objects.isUploading}
-			<div
-				class="absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-accent-500/50 bg-accent-500/5 backdrop-blur-sm"
-			>
-				<div class="text-center">
-					<UploadIcon size={32} class="mx-auto mb-2 text-accent-400" />
-					<p class="text-sm font-medium text-accent-400">Drop files to upload here</p>
-					{#if objects.currentPrefix}
-						<p class="mt-1 text-xs text-surface-500">into {objects.currentPrefix}</p>
-					{/if}
-				</div>
-			</div>
-		{/if}
-
-		{#if bucketName}
-			<ObjectBrowser
-				{bucketName}
-				refreshKey={browserRefreshKey}
-				onopenmetadata={openMetadataModal}
-				oncopyobject={openCopyModal}
-			/>
-		{/if}
+	<!-- Tab Bar -->
+	<div class="mb-2 flex shrink-0 border-b border-surface-800">
+		<button
+			onclick={() => (activeTab = 'objects')}
+			class="border-b-2 px-5 py-2.5 text-xs font-semibold transition-colors {activeTab === 'objects'
+				? 'border-accent-500 font-bold text-accent-400'
+				: 'border-transparent text-surface-400 hover:text-surface-200'}"
+		>
+			Objects
+		</button>
+		<button
+			onclick={() => (activeTab = 'permissions')}
+			class="border-b-2 px-5 py-2.5 text-xs font-semibold transition-colors {activeTab ===
+			'permissions'
+				? 'border-accent-500 font-bold text-accent-400'
+				: 'border-transparent text-surface-400 hover:text-surface-200'}"
+		>
+			Permissions & Sharing
+		</button>
 	</div>
+
+	{#if activeTab === 'objects'}
+		<div
+			class="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+			role="region"
+			aria-label="Object browser"
+			ondragover={handleDragOver}
+			ondragleave={handleDragLeave}
+			ondrop={handleDrop}
+		>
+			{#if isDragging && !objects.isUploading}
+				<div
+					class="absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-accent-500/50 bg-accent-500/5 backdrop-blur-sm"
+				>
+					<div class="text-center">
+						<UploadIcon size={32} class="mx-auto mb-2 text-accent-400" />
+						<p class="text-sm font-medium text-accent-400">Drop files to upload here</p>
+						{#if objects.currentPrefix}
+							<p class="mt-1 text-xs text-surface-500">into {objects.currentPrefix}</p>
+						{/if}
+					</div>
+				</div>
+			{/if}
+
+			{#if bucketName}
+				<ObjectBrowser
+					{bucketName}
+					refreshKey={browserRefreshKey}
+					onopenmetadata={openMetadataModal}
+					oncopyobject={openCopyModal}
+					onopendownload={(obj) => (downloadTarget = obj)}
+				/>
+			{/if}
+		</div>
+	{:else}
+		<div class="min-h-0 flex-1 overflow-y-auto">
+			<BucketGrants {bucketName} />
+		</div>
+	{/if}
 </div>
 
 <input bind:this={fileInput} type="file" multiple class="hidden" onchange={handleFileSelect} />
@@ -317,9 +378,22 @@
 	isLoading={isLoadingMetadata}
 	onclose={closeMetadataModal}
 	ondownload={() => {
-		if (metadataTarget) void objects.download(metadataTarget.key);
+		if (metadataResult) {
+			downloadTarget = metadataTarget;
+		}
 		closeMetadataModal();
 	}}
+/>
+
+<DownloadOptionsModal
+	open={downloadTarget !== null}
+	object={downloadTarget}
+	onclose={closeDownloadModal}
+	ondownload={(expiresIn) => {
+		if (downloadTarget) void objects.download(downloadTarget.key, expiresIn);
+		closeDownloadModal();
+	}}
+	ongeneratelink={handleGenerateLink}
 />
 
 <CopyObjectModal

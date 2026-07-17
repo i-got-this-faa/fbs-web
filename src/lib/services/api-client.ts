@@ -24,7 +24,10 @@ import type {
 	UpdateKeyRequest,
 	UploadObjectOptions,
 	UploadProgress,
-	UploadObjectRequest
+	UploadObjectRequest,
+	BucketGrant,
+	CreateBucketGrantRequest,
+	UpdateBucketGrantRequest
 } from '$lib/types/api';
 import { sha256Hex } from '$lib/utils/crypto';
 import {
@@ -250,12 +253,20 @@ export class FbsApiClient implements FbsClient {
 		return `${this.baseUrl.replace(/\/$/, '')}/${encodeBucketName(bucket)}/${encodeObjectKeyPath(key)}`;
 	}
 
-	async createPublicObjectUrl(bucket: string, key: string): Promise<PublicObjectUrl> {
+	async createPublicObjectUrl(
+		bucket: string,
+		key: string,
+		expiresInSeconds?: number
+	): Promise<PublicObjectUrl> {
+		const payload: { expires_in_seconds?: number } = {};
+		if (expiresInSeconds !== undefined) {
+			payload.expires_in_seconds = expiresInSeconds;
+		}
 		const res = await this.managementFetch(
 			`/buckets/${encodeBucketName(bucket)}/objects/${encodeObjectKeyPath(key)}/public-url`,
 			{
 				method: 'POST',
-				body: JSON.stringify({})
+				body: JSON.stringify(payload)
 			}
 		);
 
@@ -759,6 +770,89 @@ export class FbsApiClient implements FbsClient {
 			recentUploads: []
 		};
 	}
+
+	// ── Grants (mini-IAM) ────────────────────────────────────────────────
+	async listBucketGrants(bucket: string): Promise<BucketGrant[]> {
+		const res = await this.managementFetch(`/buckets/${encodeBucketName(bucket)}/grants`);
+		if (!res.ok) {
+			await this.throwManagementError(res, 'Failed to list bucket grants');
+		}
+		const body = (await res.json()) as ManagementGrantsResponse;
+		return body.grants.map(mapGrant);
+	}
+
+	async createBucketGrants(bucket: string, req: CreateBucketGrantRequest): Promise<BucketGrant[]> {
+		const res = await this.managementFetch(`/buckets/${encodeBucketName(bucket)}/grants`, {
+			method: 'POST',
+			body: JSON.stringify({
+				grantee_user_id: req.granteeUserId,
+				grantee_access_key_id: req.granteeAccessKeyId,
+				actions: req.actions,
+				key_prefix: req.keyPrefix,
+				note: req.note
+			})
+		});
+		if (!res.ok) {
+			await this.throwManagementError(res, 'Failed to create grants');
+		}
+		const body = (await res.json()) as ManagementGrantsResponse;
+		return body.grants.map(mapGrant);
+	}
+
+	async updateBucketGrant(
+		bucket: string,
+		id: string,
+		req: UpdateBucketGrantRequest
+	): Promise<BucketGrant> {
+		const res = await this.managementFetch(`/buckets/${encodeBucketName(bucket)}/grants/${id}`, {
+			method: 'PATCH',
+			body: JSON.stringify({
+				key_prefix: req.keyPrefix,
+				is_active: req.isActive,
+				note: req.note
+			})
+		});
+		if (!res.ok) {
+			await this.throwManagementError(res, 'Failed to update grant');
+		}
+		const body = (await res.json()) as ManagementGrantEnvelopeResponse;
+		return mapGrant(body.grant);
+	}
+
+	async deleteBucketGrant(bucket: string, id: string): Promise<void> {
+		const res = await this.managementFetch(`/buckets/${encodeBucketName(bucket)}/grants/${id}`, {
+			method: 'DELETE'
+		});
+		if (!res.ok && res.status !== 204) {
+			await this.throwManagementError(res, 'Failed to delete grant');
+		}
+	}
+
+	async listMyGrants(): Promise<BucketGrant[]> {
+		const res = await this.managementFetch('/grants/me');
+		if (!res.ok) {
+			await this.throwManagementError(res, 'Failed to list my grants');
+		}
+		const body = (await res.json()) as ManagementGrantsResponse;
+		return body.grants.map(mapGrant);
+	}
+
+	async transferBucketOwnership(bucket: string, newOwnerUserId: string): Promise<Bucket> {
+		const res = await this.managementFetch(
+			`/buckets/${encodeBucketName(bucket)}/transfer-ownership`,
+			{
+				method: 'POST',
+				body: JSON.stringify({
+					new_owner_user_id: newOwnerUserId
+				})
+			}
+		);
+		if (!res.ok) {
+			await this.throwManagementError(res, 'Failed to transfer bucket ownership');
+		}
+		const body = (await res.json()) as ManagementTransferOwnershipResponse;
+		return mapBucket(body.bucket);
+	}
 }
 
 interface ManagementErrorResponse {
@@ -1014,4 +1108,45 @@ async function readManagementErrorMessage(res: Response): Promise<string | null>
 
 	const text = await res.text().catch(() => '');
 	return text.trim() || null;
+}
+
+interface ManagementGrantResponse {
+	id: string;
+	bucket: string;
+	grantee_user_id: string;
+	action: string;
+	key_prefix: string;
+	is_active: boolean;
+	created_by?: string;
+	note?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+interface ManagementGrantsResponse {
+	grants: ManagementGrantResponse[];
+}
+
+interface ManagementGrantEnvelopeResponse {
+	grant: ManagementGrantResponse;
+}
+
+interface ManagementTransferOwnershipResponse {
+	bucket: ManagementBucketResponse;
+	owner_id: string;
+}
+
+function mapGrant(grant: ManagementGrantResponse): BucketGrant {
+	return {
+		id: grant.id,
+		bucket: grant.bucket,
+		granteeUserId: grant.grantee_user_id,
+		action: grant.action,
+		keyPrefix: grant.key_prefix,
+		isActive: grant.is_active,
+		createdBy: grant.created_by,
+		note: grant.note,
+		createdAt: grant.created_at,
+		updatedAt: grant.updated_at
+	};
 }

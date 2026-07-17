@@ -8,6 +8,7 @@
 	import { setDashboardContext } from '$lib/stores/dashboard.svelte';
 	import { setPageActionsContext } from '$lib/stores/page-actions.svelte';
 	import { setServerContext } from '$lib/stores/server.svelte';
+	import { setGrantsContext } from '$lib/stores/grants.svelte';
 
 	const { children } = $props();
 
@@ -21,6 +22,7 @@
 	setKeysContext();
 	setServerContext();
 	setPageActionsContext();
+	setGrantsContext();
 </script>
 
 <svelte:head>

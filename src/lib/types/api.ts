@@ -228,6 +228,34 @@ export interface ObjectMetadata {
 	lastModified: string;
 }
 
+// ── Resource Grants (mini-IAM) ──────────────────────────────────────────────
+export interface BucketGrant {
+	id: string;
+	bucket: string;
+	granteeUserId: string;
+	action: string;
+	keyPrefix: string;
+	isActive: boolean;
+	createdBy?: string;
+	note?: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface CreateBucketGrantRequest {
+	granteeUserId?: string;
+	granteeAccessKeyId?: string;
+	actions: string[];
+	keyPrefix: string;
+	note?: string;
+}
+
+export interface UpdateBucketGrantRequest {
+	keyPrefix?: string;
+	isActive?: boolean;
+	note?: string;
+}
+
 // ── API Client Interface ────────────────────────────────────────────────────
 export interface ListObjectsOptions {
 	prefix?: string;
@@ -251,7 +279,11 @@ export interface FbsClient {
 	listObjects(bucket: string, opts?: ListObjectsOptions): Promise<ObjectListing>;
 	deleteObject(bucket: string, key: string): Promise<void>;
 	getObjectUrl(bucket: string, key: string): string;
-	createPublicObjectUrl(bucket: string, key: string): Promise<PublicObjectUrl>;
+	createPublicObjectUrl(
+		bucket: string,
+		key: string,
+		expiresInSeconds?: number
+	): Promise<PublicObjectUrl>;
 	uploadObject(req: UploadObjectRequest, options?: UploadObjectOptions): Promise<void>;
 	headObject(bucket: string, key: string): Promise<ObjectMetadata>;
 	// Keys
@@ -269,4 +301,15 @@ export interface FbsClient {
 	listObjectsV1(bucket: string, opts?: ListObjectsV1Options): Promise<ObjectListingV1>;
 	copyObject(data: CopyObjectRequest): Promise<CopyObjectResult>;
 	deleteObjects(bucket: string, keys: string[], quiet?: boolean): Promise<DeleteObjectsResult>;
+	// Grants (mini-IAM)
+	listBucketGrants(bucket: string): Promise<BucketGrant[]>;
+	createBucketGrants(bucket: string, req: CreateBucketGrantRequest): Promise<BucketGrant[]>;
+	updateBucketGrant(
+		bucket: string,
+		id: string,
+		req: UpdateBucketGrantRequest
+	): Promise<BucketGrant>;
+	deleteBucketGrant(bucket: string, id: string): Promise<void>;
+	listMyGrants(): Promise<BucketGrant[]>;
+	transferBucketOwnership(bucket: string, newOwnerUserId: string): Promise<Bucket>;
 }
