@@ -92,10 +92,11 @@
 		if (disabled) return;
 
 		if (!isOpen) {
-			if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter') {
+			if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
 				isOpen = true;
 				event.preventDefault();
 			}
+			// Enter when closed: let the surrounding form submit normally
 			return;
 		}
 
@@ -124,16 +125,22 @@
 				}
 			}
 		} else if (event.key === 'Enter') {
-			event.preventDefault();
 			if (activeIndex >= 0 && activeIndex < filteredItems.length) {
 				const item = filteredItems[activeIndex];
 				if (item && !item.disabled) {
+					event.preventDefault();
 					selectItem(item);
 				}
 			} else if (filteredItems.length > 0) {
-				// If no active index, select the first match
+				// Unambiguous single match — select it
 				const item = filteredItems.find((i) => !i.disabled);
-				if (item) selectItem(item);
+				if (item) {
+					event.preventDefault();
+					selectItem(item);
+				}
+			} else {
+				// No items to select: close dropdown and let the form submit
+				isOpen = false;
 			}
 		} else if (event.key === 'Escape') {
 			isOpen = false;
