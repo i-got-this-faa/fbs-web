@@ -34,9 +34,6 @@
 	});
 </script>
 
-<span
-	class="inline-flex w-fit items-center gap-1.5 justify-self-start rounded-full px-2.5 py-0.5 text-[11px] font-medium capitalize {config.bg} {config.text}"
->
-	<span class="inline-block h-1.5 w-1.5 rounded-full {config.dot}"></span>
+<span class="inline-block text-[11px] font-medium capitalize {config.text}">
 	{config.label}
 </span>

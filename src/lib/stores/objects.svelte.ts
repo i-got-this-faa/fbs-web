@@ -306,12 +306,16 @@ class ObjectsStore {
 	}
 
 	/** Download an object via a short-lived signed public URL */
-	async download(key: string): Promise<boolean> {
+	async download(key: string, expiresInSeconds?: number): Promise<boolean> {
 		const client = this.connection.client;
 		if (!client) return false;
 
 		try {
-			const publicUrl = await client.createPublicObjectUrl(this.currentBucket, key);
+			const publicUrl = await client.createPublicObjectUrl(
+				this.currentBucket,
+				key,
+				expiresInSeconds
+			);
 			this.openDownload(publicUrl.url, key);
 			return true;
 		} catch (err) {
