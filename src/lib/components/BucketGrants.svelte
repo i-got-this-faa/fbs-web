@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { getGrantsContext } from '$lib/stores/grants.svelte';
 	import { getKeysContext } from '$lib/stores/keys.svelte';
 	import { getBucketsContext } from '$lib/stores/buckets.svelte';
@@ -50,8 +49,10 @@
 
 	let deleteTarget = $state<BucketGrant | null>(null);
 
-	onMount(async () => {
-		await loadData();
+	$effect(() => {
+		if (bucketName) {
+			void loadData();
+		}
 	});
 
 	async function loadData() {

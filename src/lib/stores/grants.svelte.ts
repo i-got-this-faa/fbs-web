@@ -14,20 +14,30 @@ class GrantsStore {
 	error = $state<string | null>(null);
 
 	private connection = getConnectionContext();
+	private buckets = getBucketsContext();
+	private loadGeneration = 0;
 
 	async load(bucket: string): Promise<void> {
 		const client = this.connection.client;
 		if (!client) return;
 
+		const generation = ++this.loadGeneration;
 		this.isLoading = true;
 		this.error = null;
 
 		try {
-			this.items = await client.listBucketGrants(bucket);
+			const items = await client.listBucketGrants(bucket);
+			if (generation === this.loadGeneration) {
+				this.items = items;
+			}
 		} catch (err) {
-			this.error = err instanceof Error ? err.message : 'Failed to load grants';
+			if (generation === this.loadGeneration) {
+				this.error = err instanceof Error ? err.message : 'Failed to load grants';
+			}
 		} finally {
-			this.isLoading = false;
+			if (generation === this.loadGeneration) {
+				this.isLoading = false;
+			}
 		}
 	}
 
@@ -96,14 +106,13 @@ class GrantsStore {
 		const client = this.connection.client;
 		if (!client) return false;
 
-		const buckets = getBucketsContext();
 		this.error = null;
 		try {
 			const updatedBucket = await client.transferBucketOwnership(bucket, newOwnerUserId);
-			if (buckets.selected?.name === bucket) {
-				buckets.selected = updatedBucket;
+			if (this.buckets.selected?.name === bucket) {
+				this.buckets.selected = updatedBucket;
 			}
-			buckets.items = buckets.items.map((b) => (b.name === bucket ? updatedBucket : b));
+			this.buckets.items = this.buckets.items.map((b) => (b.name === bucket ? updatedBucket : b));
 			return true;
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : 'Failed to transfer bucket ownership';

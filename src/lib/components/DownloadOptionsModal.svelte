@@ -65,10 +65,8 @@
 					class="w-full rounded-lg border border-surface-700 bg-surface-800 px-3 py-2 text-sm text-surface-100 outline-none focus:border-accent-500"
 				>
 					<option value={3600}>1 Hour</option>
-					<option value={43200}>12 Hours</option>
+					<option value={21600}>6 Hours</option>
 					<option value={86400}>1 Day (24 Hours)</option>
-					<option value={604800}>7 Days</option>
-					<option value={3153600000}>Forever (100 Years)</option>
 				</select>
 				<p class="text-xs text-surface-600">
 					All download links require a signed URL. Selecting a duration longer than the server's

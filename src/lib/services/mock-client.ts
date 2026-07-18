@@ -716,7 +716,7 @@ export class MockFbsClient implements FbsClient {
 		req: UpdateBucketGrantRequest
 	): Promise<BucketGrant> {
 		await delay();
-		const grant = this.grants.find((g) => g.id === id);
+		const grant = this.grants.find((g) => g.bucket === bucket && g.id === id);
 		if (!grant) throw new Error(`Grant "${id}" not found`);
 		if (req.keyPrefix !== undefined) grant.keyPrefix = req.keyPrefix;
 		if (req.isActive !== undefined) grant.isActive = req.isActive;
@@ -727,7 +727,7 @@ export class MockFbsClient implements FbsClient {
 
 	async deleteBucketGrant(bucket: string, id: string): Promise<void> {
 		await delay();
-		const idx = this.grants.findIndex((g) => g.id === id);
+		const idx = this.grants.findIndex((g) => g.bucket === bucket && g.id === id);
 		if (idx === -1) throw new Error(`Grant "${id}" not found`);
 		this.grants.splice(idx, 1);
 	}
