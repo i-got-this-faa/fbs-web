@@ -1,23 +1,14 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { SvelteSet } from 'svelte/reactivity';
 	import { getGrantsContext } from '$lib/stores/grants.svelte';
 	import { getKeysContext } from '$lib/stores/keys.svelte';
 	import { getBucketsContext } from '$lib/stores/buckets.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import Autocomplete from '$lib/components/Autocomplete.svelte';
 	import type { BucketGrant, CreateBucketGrantRequest } from '$lib/types/api';
 	import { ShieldIcon, UserIcon, Trash2Icon, AlertCircleIcon, SettingsIcon } from 'lucide-svelte';
-	import {
-		Table,
-		TableHeader,
-		TableBody,
-		TableRow,
-		TableHead,
-		TableCell
-	} from '$lib/components/table';
 
 	interface Props {
 		bucketName: string;
@@ -45,15 +36,6 @@
 
 	let deleteGroupTarget = $state<GroupedGrant | null>(null);
 	let deleteIndividualTarget = $state<BucketGrant | null>(null);
-	const expandedGroupIds = new SvelteSet<string>();
-
-	function toggleGroupExpanded(groupId: string) {
-		if (expandedGroupIds.has(groupId)) {
-			expandedGroupIds.delete(groupId);
-		} else {
-			expandedGroupIds.add(groupId);
-		}
-	}
 
 	$effect(() => {
 		if (showCreateModal) {
@@ -62,16 +44,12 @@
 				selectedActions = ['s3:GetObject', 's3:ListBucket'];
 				keyPrefix = '';
 				note = '';
-				granteeType = activeKeys.length > 0 ? 'key' : 'manual';
 				selectedKeyId = activeKeys[0]?.id ?? '';
-				manualUserId = '';
 			});
 		}
 	});
 
-	let granteeType = $state<'key' | 'manual'>('key');
 	let selectedKeyId = $state('');
-	let manualUserId = $state('');
 	let selectedActions = $state<string[]>([]);
 	let keyPrefix = $state('');
 	let note = $state('');
@@ -79,9 +57,7 @@
 	let isCreating = $state(false);
 
 	let showTransferModal = $state(false);
-	let transferTargetType = $state<'key' | 'manual'>('key');
 	let transferSelectedKeyId = $state('');
-	let transferManualUserId = $state('');
 	let transferError = $state<string | null>(null);
 	let isTransferring = $state(false);
 
@@ -126,17 +102,26 @@
 	const activeKeys = $derived(keys.items.filter((k) => k.isActive));
 	const ownerKey = $derived(keys.items.find((k) => k.id === buckets.selected?.ownerId));
 
-	// Group active keys by displayName (user)
-	const keysByUser = $derived.by(() => {
-		const groups: Record<string, typeof activeKeys> = {};
-		for (const key of activeKeys) {
-			if (!groups[key.displayName]) {
-				groups[key.displayName] = [];
-			}
-			groups[key.displayName].push(key);
-		}
-		return groups;
-	});
+	// Items for Autocomplete components
+	const autocompleteItems = $derived(
+		activeKeys.map((key) => ({
+			id: key.id,
+			label: `${key.accessKeyId} (${key.role})`,
+			group: key.displayName
+		}))
+	);
+
+	const transferAutocompleteItems = $derived(
+		activeKeys.map((key) => ({
+			id: key.id,
+			label:
+				key.id === buckets.selected?.ownerId
+					? `${key.accessKeyId} (${key.role}) (Current Owner)`
+					: `${key.accessKeyId} (${key.role})`,
+			group: key.displayName,
+			disabled: key.id === buckets.selected?.ownerId
+		}))
+	);
 
 	// Group bucket grants by granteeUserId and keyPrefix
 	const groupedGrants = $derived.by(() => {
@@ -209,10 +194,10 @@
 		e.preventDefault();
 		createError = null;
 
-		const granteeUserId = granteeType === 'key' ? selectedKeyId : manualUserId.trim();
+		const granteeUserId = selectedKeyId;
 
 		if (!granteeUserId) {
-			createError = 'Grantee is required';
+			createError = 'Grantee access key is required';
 			return;
 		}
 
@@ -241,17 +226,6 @@
 		}
 	}
 
-	async function handleToggleActiveGroup(group: GroupedGrant) {
-		const newStatus = !group.isActive;
-		await Promise.all(
-			group.grants.map((grant) =>
-				grants.update(bucketName, grant.id, {
-					isActive: newStatus
-				})
-			)
-		);
-	}
-
 	async function handleDeleteGroup() {
 		if (!deleteGroupTarget) return;
 		const targets = deleteGroupTarget.grants;
@@ -266,24 +240,44 @@
 		await grants.remove(bucketName, target.id);
 	}
 
+	let quickAddError = $state<string | null>(null);
+
+	const getAvailableActions = (group: GroupedGrant) => {
+		return s3Actions.filter((action) => !group.grants.some((g) => g.action === action.value));
+	};
+
+	async function handleQuickAddAction(group: GroupedGrant, action: string) {
+		if (!action) return;
+		quickAddError = null;
+
+		const req: CreateBucketGrantRequest = {
+			granteeUserId: group.granteeUserId,
+			actions: [action],
+			keyPrefix: group.keyPrefix,
+			note: group.note || undefined
+		};
+
+		const success = await grants.create(bucketName, req);
+		if (!success) {
+			quickAddError = grants.error;
+		}
+	}
+
 	function openTransferModal() {
 		showTransferModal = true;
 		transferError = null;
-		transferTargetType = activeKeys.length > 0 ? 'key' : 'manual';
 		transferSelectedKeyId =
 			activeKeys.find((k) => k.id !== buckets.selected?.ownerId)?.id ?? activeKeys[0]?.id ?? '';
-		transferManualUserId = '';
 	}
 
 	async function handleTransfer(e: Event) {
 		e.preventDefault();
 		transferError = null;
 
-		const newOwnerUserId =
-			transferTargetType === 'key' ? transferSelectedKeyId : transferManualUserId.trim();
+		const newOwnerUserId = transferSelectedKeyId;
 
 		if (!newOwnerUserId) {
-			transferError = 'New owner user ID is required';
+			transferError = 'New owner access key is required';
 			return;
 		}
 
@@ -377,113 +371,102 @@
 				</p>
 			</div>
 		{:else}
-			<div class="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
-				<Table class="table-fixed">
-					<TableHeader>
-						<TableRow>
-							<TableHead class="w-[22%] font-medium">Grantee</TableHead>
-							<TableHead class="w-[28%] font-medium">Action</TableHead>
-							<TableHead class="w-[15%] font-medium">Prefix</TableHead>
-							<TableHead class="w-[20%] font-medium">Note</TableHead>
-							<TableHead class="w-[90px] font-medium">Status</TableHead>
-							<TableHead class="w-[60px] text-right font-medium">Actions</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{#each groupedGrants as group (group.id)}
-							{@const isExpanded = expandedGroupIds.has(group.id)}
-							<TableRow>
-								<TableCell
-									class="max-w-[150px] truncate font-medium text-surface-200"
-									title={group.granteeUserId}
-								>
-									<button
-										type="button"
-										onclick={() => toggleGroupExpanded(group.id)}
-										class="flex items-center gap-1.5 text-left text-xs font-semibold text-surface-300 transition-colors hover:text-accent-400 focus:outline-none"
-									>
-										<span
-											class="inline-block w-3 text-center font-mono text-[10px] text-surface-500"
-										>
-											{isExpanded ? '▼' : '▶'}
-										</span>
-										<span>{resolveGranteeName(group.granteeUserId)}</span>
-									</button>
-								</TableCell>
-								<TableCell class="font-medium text-surface-400">
-									<span
-										class="rounded border border-surface-850 bg-surface-950 px-1.5 py-0.5 font-sans text-[10px] text-surface-400"
-									>
-										{group.grants.length} Actions
+			<div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+				{#each groupedGrants as group (group.id)}
+					<div
+						class="rounded-xl border border-surface-800 bg-surface-950/20 p-4 transition-all duration-150 hover:border-surface-700"
+					>
+						<!-- Header -->
+						<div class="flex items-start justify-between border-b border-surface-800/50 pb-3">
+							<div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+								<div class="flex items-center gap-2">
+									<UserIcon size={14} class="text-accent-400" />
+									<span class="text-sm font-semibold text-surface-100">
+										{resolveGranteeName(group.granteeUserId)}
 									</span>
-								</TableCell>
-								<TableCell class="font-mono text-[11px] text-surface-300">
+								</div>
+								<span class="text-xs text-surface-700 select-none">•</span>
+								<div class="flex items-center gap-1.5 text-xs text-surface-400">
+									<span class="text-surface-500">Folder prefix:</span>
 									{#if group.keyPrefix}
-										{group.keyPrefix}
-									{:else}
-										<span class="text-surface-600 italic">Entire Bucket</span>
-									{/if}
-								</TableCell>
-								<TableCell class="max-w-[120px] truncate text-surface-400" title={group.note}>
-									{group.note || '-'}
-								</TableCell>
-								<TableCell>
-									<button
-										onclick={() => handleToggleActiveGroup(group)}
-										class="transition-opacity hover:opacity-80"
-										title="Click to toggle status"
-									>
-										<StatusBadge status={group.isActive ? 'active' : 'inactive'} />
-									</button>
-								</TableCell>
-								<TableCell class="text-right">
-									<button
-										onclick={() => (deleteGroupTarget = group)}
-										class="rounded p-1 text-surface-500 transition-colors hover:bg-danger-500/10 hover:text-danger-400"
-										aria-label="Delete grant"
-									>
-										<Trash2Icon size={14} />
-									</button>
-								</TableCell>
-							</TableRow>
-
-							{#if isExpanded}
-								{#each group.grants as grant, idx (grant.id)}
-									{@const isLast = idx === group.grants.length - 1}
-									<TableRow
-										class="border-none bg-surface-950/20 text-surface-400 hover:bg-surface-850/10"
-									>
-										<TableCell
-											colspan={6}
-											class="py-2 pl-12 font-mono text-[11px] whitespace-nowrap text-surface-500"
+										<code
+											class="rounded border border-surface-850 bg-surface-950 px-1.5 py-0.5 font-mono text-[10px] font-medium text-accent-400"
 										>
-											<div class="flex w-[320px] items-center justify-between">
-												<div class="flex items-center gap-2">
-													<span class="font-mono text-surface-700 select-none">
-														{isLast ? '└──' : '├──'}
-													</span>
-													<code
-														class="rounded border border-surface-850 bg-surface-950/50 px-1.5 py-0.5 font-mono text-[10px] text-accent-400"
-													>
-														{grant.action}
-													</code>
-												</div>
-												<button
-													type="button"
-													onclick={() => (deleteIndividualTarget = grant)}
-													class="rounded p-0.5 text-surface-600 transition-colors hover:bg-danger-500/10 hover:text-danger-400"
-													title="Remove this permission"
-												>
-													<Trash2Icon size={11} />
-												</button>
-											</div>
-										</TableCell>
-									</TableRow>
+											{group.keyPrefix}
+										</code>
+									{:else}
+										<span class="text-surface-650 font-medium italic">Entire Bucket</span>
+									{/if}
+								</div>
+								{#if group.note}
+									<span class="text-xs text-surface-700 select-none">•</span>
+									<div class="flex items-center gap-1.5 text-xs text-surface-400">
+										<span class="text-surface-500">Note:</span>
+										<span class="font-medium text-surface-300">{group.note}</span>
+									</div>
+								{/if}
+							</div>
+							<button
+								onclick={() => (deleteGroupTarget = group)}
+								class="rounded-lg p-1.5 text-surface-500 transition-colors hover:bg-danger-500/10 hover:text-danger-400"
+								title="Remove all permissions for this grantee"
+							>
+								<Trash2Icon size={14} />
+							</button>
+						</div>
+
+						<!-- Granted Actions -->
+						<div class="mt-3.5">
+							<div class="flex flex-wrap gap-2">
+								{#each group.grants as grant (grant.id)}
+									<div
+										class="group/action flex w-[220px] items-center justify-between rounded-lg border border-surface-800 bg-surface-900/40 py-1.5 pr-1.5 pl-3 transition-all duration-150 hover:border-accent-500/20 hover:bg-surface-900"
+									>
+										<code class="font-mono text-xs font-semibold text-accent-400">
+											{grant.action.replace('s3:', '')}
+										</code>
+										<button
+											type="button"
+											onclick={() => (deleteIndividualTarget = grant)}
+											class="rounded p-0.5 text-surface-500 opacity-0 transition-all duration-150 group-hover/action:opacity-100 hover:bg-danger-500/10 hover:text-danger-400 focus:opacity-100"
+											title="Revoke this action"
+										>
+											<Trash2Icon size={12} />
+										</button>
+									</div>
 								{/each}
+
+								{#if getAvailableActions(group).length > 0}
+									<div class="relative w-[220px]">
+										<select
+											value=""
+											onchange={(e) => handleQuickAddAction(group, e.currentTarget.value)}
+											class="w-full cursor-pointer appearance-none rounded-lg border border-surface-700 bg-surface-800 py-1.5 pr-8 pl-3 text-xs font-semibold text-surface-100 transition-colors outline-none hover:border-surface-600 focus:border-accent-500"
+										>
+											<option value="" disabled selected>+ Add Permission</option>
+											{#each getAvailableActions(group) as action (action.value)}
+												<option value={action.value} class="bg-surface-900 text-surface-100">
+													{action.value.replace('s3:', '')}
+												</option>
+											{/each}
+										</select>
+										<div
+											class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[8px] text-surface-400"
+										>
+											▼
+										</div>
+									</div>
+								{/if}
+							</div>
+
+							{#if quickAddError}
+								<p class="mt-2 text-xs font-medium text-danger-400">
+									Failed to add action: {quickAddError}
+								</p>
 							{/if}
-						{/each}
-					</TableBody>
-				</Table>
+						</div>
+					</div>
+				{/each}
 			</div>
 		{/if}
 	{/if}
@@ -493,72 +476,20 @@
 <Modal
 	open={showCreateModal}
 	title="Create Sharing Grant"
-	description="Assign actions and folder path prefixes to a user."
 	onclose={() => (showCreateModal = false)}
 >
 	<form onsubmit={handleCreate} class="space-y-4">
-		<!-- Grantee Type Selector -->
-		{#if activeKeys.length > 0}
-			<div class="flex rounded-lg border border-surface-800 bg-surface-950 p-1">
-				<button
-					type="button"
-					onclick={() => (granteeType = 'key')}
-					class="flex-1 rounded-md py-1.5 text-xs font-semibold transition-colors {granteeType ===
-					'key'
-						? 'bg-surface-850 text-surface-100'
-						: 'text-surface-500 hover:text-surface-300'}"
-				>
-					Select Key
-				</button>
-				<button
-					type="button"
-					onclick={() => (granteeType = 'manual')}
-					class="flex-1 rounded-md py-1.5 text-xs font-semibold transition-colors {granteeType ===
-					'manual'
-						? 'bg-surface-850 text-surface-100'
-						: 'text-surface-500 hover:text-surface-300'}"
-				>
-					Manual User ID
-				</button>
-			</div>
-		{/if}
-
-		{#if granteeType === 'key' && activeKeys.length > 0}
-			<div>
-				<label for="grantee-key" class="mb-1 block text-xs font-medium text-surface-400">
-					Select Access Key
-				</label>
-				<select
-					id="grantee-key"
-					bind:value={selectedKeyId}
-					class="w-full rounded-lg border border-surface-700 bg-surface-800 px-3 py-2 text-xs text-surface-100 outline-none focus:border-accent-500"
-				>
-					{#each Object.entries(keysByUser) as [user, userKeys] (user)}
-						<optgroup label={user}>
-							{#each userKeys as key (key.id)}
-								<option value={key.id}>
-									{key.accessKeyId} ({key.role})
-								</option>
-							{/each}
-						</optgroup>
-					{/each}
-				</select>
-			</div>
-		{:else}
-			<div>
-				<label for="manual-user-id" class="mb-1 block text-xs font-medium text-surface-400">
-					Grantee User ID (UUID)
-				</label>
-				<input
-					id="manual-user-id"
-					type="text"
-					bind:value={manualUserId}
-					placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000"
-					required
-					class="w-full rounded-lg border border-surface-700 bg-surface-800 px-3 py-2 font-mono text-xs text-surface-100 outline-none focus:border-accent-500"
-				/>
-			</div>
-		{/if}
+		<div>
+			<label for="grantee-key" class="mb-1 block text-xs font-medium text-surface-400">
+				Select Access Key
+			</label>
+			<Autocomplete
+				id="grantee-key"
+				bind:value={selectedKeyId}
+				items={autocompleteItems}
+				placeholder="Select or search access key..."
+			/>
+		</div>
 
 		<!-- Actions -->
 		<div>
@@ -649,69 +580,17 @@
 	onclose={() => (showTransferModal = false)}
 >
 	<form onsubmit={handleTransfer} class="space-y-4">
-		{#if activeKeys.length > 0}
-			<div class="flex rounded-lg border border-surface-800 bg-surface-950 p-1">
-				<button
-					type="button"
-					onclick={() => (transferTargetType = 'key')}
-					class="flex-1 rounded-md py-1.5 text-xs font-semibold transition-colors {transferTargetType ===
-					'key'
-						? 'bg-surface-850 text-surface-100'
-						: 'text-surface-500 hover:text-surface-300'}"
-				>
-					Select Key
-				</button>
-				<button
-					type="button"
-					onclick={() => (transferTargetType = 'manual')}
-					class="flex-1 rounded-md py-1.5 text-xs font-semibold transition-colors {transferTargetType ===
-					'manual'
-						? 'bg-surface-850 text-surface-100'
-						: 'text-surface-500 hover:text-surface-300'}"
-				>
-					Manual User ID
-				</button>
-			</div>
-		{/if}
-
-		{#if transferTargetType === 'key' && activeKeys.length > 0}
-			<div>
-				<label for="transfer-key" class="mb-1 block text-xs font-medium text-surface-400">
-					Select Access Key
-				</label>
-				<select
-					id="transfer-key"
-					bind:value={transferSelectedKeyId}
-					class="w-full rounded-lg border border-surface-700 bg-surface-800 px-3 py-2 text-xs text-surface-100 outline-none focus:border-accent-500"
-				>
-					{#each Object.entries(keysByUser) as [user, userKeys] (user)}
-						<optgroup label={user}>
-							{#each userKeys as key (key.id)}
-								<option value={key.id} disabled={key.id === buckets.selected?.ownerId}>
-									{key.accessKeyId} ({key.role}){key.id === buckets.selected?.ownerId
-										? ' (Current Owner)'
-										: ''}
-								</option>
-							{/each}
-						</optgroup>
-					{/each}
-				</select>
-			</div>
-		{:else}
-			<div>
-				<label for="transfer-manual-id" class="mb-1 block text-xs font-medium text-surface-400">
-					New Owner User ID (UUID)
-				</label>
-				<input
-					id="transfer-manual-id"
-					type="text"
-					bind:value={transferManualUserId}
-					placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000"
-					required
-					class="w-full rounded-lg border border-surface-700 bg-surface-800 px-3 py-2 font-mono text-xs text-surface-100 outline-none focus:border-accent-500"
-				/>
-			</div>
-		{/if}
+		<div>
+			<label for="transfer-key" class="mb-1 block text-xs font-medium text-surface-400">
+				Select Access Key
+			</label>
+			<Autocomplete
+				id="transfer-key"
+				bind:value={transferSelectedKeyId}
+				items={transferAutocompleteItems}
+				placeholder="Select or search access key..."
+			/>
+		</div>
 
 		{#if transferError}
 			<p

@@ -8,8 +8,12 @@
 	}
 
 	let { children, class: className = '', ...restProps }: Props = $props();
+	const hasDivide = $derived(className.includes('divide-'));
 </script>
 
-<tbody class="divide-y divide-surface-850 bg-surface-900/50 {className}" {...restProps}>
+<tbody
+	class="{hasDivide ? '' : 'divide-y divide-surface-850'} bg-surface-900/50 {className}"
+	{...restProps}
+>
 	{@render children?.()}
 </tbody>

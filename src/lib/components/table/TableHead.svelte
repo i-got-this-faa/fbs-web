@@ -8,10 +8,21 @@
 	}
 
 	let { children, class: className = '', ...restProps }: Props = $props();
+
+	const hasPaddingY = $derived(className.includes('py-'));
+	const hasPaddingX = $derived(
+		className.includes('px-') || className.includes('pl-') || className.includes('pr-')
+	);
+	const hasTextSize = $derived(className.includes('text-'));
+	const hasTextColor = $derived(className.includes('text-surface-'));
 </script>
 
 <th
-	class="sticky top-0 z-10 border-b border-surface-800 bg-surface-900 px-4 py-2.5 text-xs font-semibold tracking-wider text-surface-500 uppercase {className}"
+	class="sticky top-0 z-10 border-b border-surface-800 bg-surface-900 font-semibold tracking-wider uppercase {hasPaddingX
+		? ''
+		: 'px-4'} {hasPaddingY ? '' : 'py-2.5'} {hasTextSize ? '' : 'text-xs'} {hasTextColor
+		? ''
+		: 'text-surface-500'} {className}"
 	{...restProps}
 >
 	{@render children?.()}

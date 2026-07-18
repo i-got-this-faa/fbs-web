@@ -8,8 +8,12 @@
 	}
 
 	let { children, class: className = '', ...restProps }: Props = $props();
+	const hasHoverClass = $derived(className.includes('hover:bg-'));
 </script>
 
-<tr class="transition-colors hover:bg-surface-850/30 {className}" {...restProps}>
+<tr
+	class="transition-colors {hasHoverClass ? '' : 'hover:bg-surface-850/30'} {className}"
+	{...restProps}
+>
 	{@render children?.()}
 </tr>
