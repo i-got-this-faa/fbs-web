@@ -36,6 +36,17 @@
 
 	let deleteGroupTarget = $state<GroupedGrant | null>(null);
 	let deleteIndividualTarget = $state<BucketGrant | null>(null);
+	let deleteError = $state<string | null>(null);
+	let isDeleting = $state(false);
+
+	$effect(() => {
+		if (deleteGroupTarget !== null || deleteIndividualTarget !== null) {
+			untrack(() => {
+				deleteError = null;
+				isDeleting = false;
+			});
+		}
+	});
 
 	$effect(() => {
 		if (showCreateModal) {
@@ -70,6 +81,7 @@
 	async function loadData() {
 		isLoading = true;
 		loadError = null;
+		quickAddErrors = {};
 		try {
 			// Load grants on the bucket
 			await grants.load(bucketName);
@@ -135,7 +147,9 @@
 		}
 
 		return Object.entries(groups).map(([keyStr, items]) => {
-			const [granteeUserId, keyPrefix] = keyStr.split('::');
+			const parts = keyStr.split('::');
+			const granteeUserId = parts[0];
+			const keyPrefix = parts.slice(1).join('::');
 			const isActive = items.every((item) => item.isActive);
 			const notes = Array.from(new Set(items.map((item) => item.note).filter(Boolean)));
 			const note = notes.join(', ') || '';
@@ -228,19 +242,45 @@
 
 	async function handleDeleteGroup() {
 		if (!deleteGroupTarget) return;
+		deleteError = null;
+		isDeleting = true;
 		const targets = deleteGroupTarget.grants;
-		deleteGroupTarget = null;
-		await Promise.all(targets.map((grant) => grants.remove(bucketName, grant.id)));
+		try {
+			const results = await Promise.all(
+				targets.map((grant) => grants.remove(bucketName, grant.id))
+			);
+			if (results.every(Boolean)) {
+				deleteGroupTarget = null;
+			} else {
+				deleteError = grants.error || 'Failed to remove some or all grants';
+			}
+		} catch (err) {
+			deleteError = err instanceof Error ? err.message : 'An error occurred while deleting';
+		} finally {
+			isDeleting = false;
+		}
 	}
 
 	async function handleDeleteIndividual() {
 		if (!deleteIndividualTarget) return;
+		deleteError = null;
+		isDeleting = true;
 		const target = deleteIndividualTarget;
-		deleteIndividualTarget = null;
-		await grants.remove(bucketName, target.id);
+		try {
+			const success = await grants.remove(bucketName, target.id);
+			if (success) {
+				deleteIndividualTarget = null;
+			} else {
+				deleteError = grants.error || 'Failed to remove permission';
+			}
+		} catch (err) {
+			deleteError = err instanceof Error ? err.message : 'An error occurred while deleting';
+		} finally {
+			isDeleting = false;
+		}
 	}
 
-	let quickAddError = $state<string | null>(null);
+	let quickAddErrors = $state<Record<string, string | null>>({});
 
 	const getAvailableActions = (group: GroupedGrant) => {
 		return s3Actions.filter((action) => !group.grants.some((g) => g.action === action.value));
@@ -248,7 +288,7 @@
 
 	async function handleQuickAddAction(group: GroupedGrant, action: string) {
 		if (!action) return;
-		quickAddError = null;
+		quickAddErrors[group.id] = null;
 
 		const req: CreateBucketGrantRequest = {
 			granteeUserId: group.granteeUserId,
@@ -259,7 +299,7 @@
 
 		const success = await grants.create(bucketName, req);
 		if (!success) {
-			quickAddError = grants.error;
+			quickAddErrors[group.id] = grants.error;
 		}
 	}
 
@@ -459,9 +499,9 @@
 								{/if}
 							</div>
 
-							{#if quickAddError}
+							{#if quickAddErrors[group.id]}
 								<p class="mt-2 text-xs font-medium text-danger-400">
-									Failed to add action: {quickAddError}
+									Failed to add action: {quickAddErrors[group.id]}
 								</p>
 							{/if}
 						</div>
@@ -488,6 +528,7 @@
 				bind:value={selectedKeyId}
 				items={autocompleteItems}
 				placeholder="Select or search access key..."
+				allowCustom={true}
 			/>
 		</div>
 
@@ -589,6 +630,7 @@
 				bind:value={transferSelectedKeyId}
 				items={transferAutocompleteItems}
 				placeholder="Select or search access key..."
+				allowCustom={true}
 			/>
 		</div>
 
@@ -625,6 +667,8 @@
 	description="Are you sure you want to remove all sharing grants for this grantee and prefix? The grantee will immediately lose all associated permissions."
 	confirmLabel="Remove Group"
 	destructive
+	error={deleteError}
+	loading={isDeleting}
 	onconfirm={handleDeleteGroup}
 	oncancel={() => (deleteGroupTarget = null)}
 />
@@ -635,6 +679,8 @@
 	description="Are you sure you want to remove this specific permission? The grantee will lose this action immediately."
 	confirmLabel="Remove Permission"
 	destructive
+	error={deleteError}
+	loading={isDeleting}
 	onconfirm={handleDeleteIndividual}
 	oncancel={() => (deleteIndividualTarget = null)}
 />

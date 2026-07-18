@@ -317,46 +317,44 @@
 		</div>
 	{/if}
 
-	<div
-		class="relative flex min-h-0 flex-1 flex-col overflow-hidden"
-		class:hidden={activeTab !== 'objects'}
-		role="region"
-		aria-label="Object browser"
-		ondragover={handleDragOver}
-		ondragleave={handleDragLeave}
-		ondrop={handleDrop}
-	>
-		{#if isDragging && !objects.isUploading}
-			<div
-				class="absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-accent-500/50 bg-accent-500/5 backdrop-blur-sm"
-			>
-				<div class="text-center">
-					<UploadIcon size={32} class="mx-auto mb-2 text-accent-400" />
-					<p class="text-sm font-medium text-accent-400">Drop files to upload here</p>
-					{#if objects.currentPrefix}
-						<p class="mt-1 text-xs text-surface-500">into {objects.currentPrefix}</p>
-					{/if}
+	{#if activeTab === 'objects'}
+		<div
+			class="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+			role="region"
+			aria-label="Object browser"
+			ondragover={handleDragOver}
+			ondragleave={handleDragLeave}
+			ondrop={handleDrop}
+		>
+			{#if isDragging && !objects.isUploading}
+				<div
+					class="absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-accent-500/50 bg-accent-500/5 backdrop-blur-sm"
+				>
+					<div class="text-center">
+						<UploadIcon size={32} class="mx-auto mb-2 text-accent-400" />
+						<p class="text-sm font-medium text-accent-400">Drop files to upload here</p>
+						{#if objects.currentPrefix}
+							<p class="mt-1 text-xs text-surface-500">into {objects.currentPrefix}</p>
+						{/if}
+					</div>
 				</div>
-			</div>
-		{/if}
+			{/if}
 
-		{#if bucketName}
-			<ObjectBrowser
-				{bucketName}
-				refreshKey={browserRefreshKey}
-				onopenmetadata={openMetadataModal}
-				oncopyobject={openCopyModal}
-				onopendownload={(obj) => (downloadTarget = obj)}
-			/>
-		{/if}
-	</div>
-
-	<div
-		class="relative flex min-h-0 flex-1 flex-col overflow-hidden"
-		class:hidden={activeTab !== 'permissions'}
-	>
-		<BucketGrants {bucketName} bind:showCreateModal />
-	</div>
+			{#if bucketName}
+				<ObjectBrowser
+					{bucketName}
+					refreshKey={browserRefreshKey}
+					onopenmetadata={openMetadataModal}
+					oncopyobject={openCopyModal}
+					onopendownload={(obj) => (downloadTarget = obj)}
+				/>
+			{/if}
+		</div>
+	{:else if activeTab === 'permissions'}
+		<div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+			<BucketGrants {bucketName} bind:showCreateModal />
+		</div>
+	{/if}
 </div>
 
 <input bind:this={fileInput} type="file" multiple class="hidden" onchange={handleFileSelect} />

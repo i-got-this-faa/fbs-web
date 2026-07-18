@@ -14,6 +14,7 @@
 		placeholder?: string;
 		items: AutocompleteItem[];
 		disabled?: boolean;
+		allowCustom?: boolean;
 	}
 
 	let {
@@ -21,7 +22,8 @@
 		value = $bindable(),
 		placeholder = 'Search...',
 		items = [],
-		disabled = false
+		disabled = false,
+		allowCustom = false
 	}: Props = $props();
 
 	let isOpen = $state(false);
@@ -40,6 +42,10 @@
 		} else if (!value) {
 			untrack(() => {
 				searchQuery = '';
+			});
+		} else if (allowCustom) {
+			untrack(() => {
+				searchQuery = value;
 			});
 		}
 	});
@@ -131,9 +137,11 @@
 			}
 		} else if (event.key === 'Escape') {
 			isOpen = false;
-			// Revert to selected label
-			const selected = items.find((item) => item.id === value);
-			searchQuery = selected ? selected.label : '';
+			if (!allowCustom) {
+				// Revert to selected label
+				const selected = items.find((item) => item.id === value);
+				searchQuery = selected ? selected.label : '';
+			}
 		}
 	}
 
@@ -149,9 +157,11 @@
 	onclick={(e) => {
 		if (isOpen && containerEl && !containerEl.contains(e.target as Node)) {
 			isOpen = false;
-			// Revert searchQuery to selected label if no selection was made
-			const selected = items.find((item) => item.id === value);
-			searchQuery = selected ? selected.label : '';
+			if (!allowCustom) {
+				// Revert searchQuery to selected label if no selection was made
+				const selected = items.find((item) => item.id === value);
+				searchQuery = selected ? selected.label : '';
+			}
 		}
 	}}
 />
@@ -168,7 +178,9 @@
 			oninput={(e) => {
 				searchQuery = e.currentTarget.value;
 				isOpen = true;
-				if (!searchQuery) {
+				if (allowCustom) {
+					value = searchQuery;
+				} else if (!searchQuery) {
 					value = '';
 				}
 			}}
