@@ -10,6 +10,14 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import type { BucketGrant, CreateBucketGrantRequest } from '$lib/types/api';
 	import { ShieldIcon, UserIcon, Trash2Icon, AlertCircleIcon, SettingsIcon } from 'lucide-svelte';
+	import {
+		Table,
+		TableHeader,
+		TableBody,
+		TableRow,
+		TableHead,
+		TableCell
+	} from '$lib/components/table';
 
 	interface Props {
 		bucketName: string;
@@ -370,25 +378,23 @@
 			</div>
 		{:else}
 			<div class="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
-				<table class="w-full table-fixed border-collapse text-left text-xs">
-					<thead>
-						<tr
-							class="sticky top-0 z-10 border-b border-surface-800 bg-surface-900 text-xs font-semibold tracking-wider text-surface-500 uppercase"
-						>
-							<th class="w-[22%] px-4 py-2.5 font-medium">Grantee</th>
-							<th class="w-[28%] px-4 py-2.5 font-medium">Action</th>
-							<th class="w-[15%] px-4 py-2.5 font-medium">Prefix</th>
-							<th class="w-[20%] px-4 py-2.5 font-medium">Note</th>
-							<th class="w-[90px] px-4 py-2.5 font-medium">Status</th>
-							<th class="w-[60px] px-4 py-2.5 text-right font-medium">Actions</th>
-						</tr>
-					</thead>
-					<tbody class="divide-y divide-surface-850">
+				<Table class="table-fixed">
+					<TableHeader>
+						<TableRow>
+							<TableHead class="w-[22%] font-medium">Grantee</TableHead>
+							<TableHead class="w-[28%] font-medium">Action</TableHead>
+							<TableHead class="w-[15%] font-medium">Prefix</TableHead>
+							<TableHead class="w-[20%] font-medium">Note</TableHead>
+							<TableHead class="w-[90px] font-medium">Status</TableHead>
+							<TableHead class="w-[60px] text-right font-medium">Actions</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
 						{#each groupedGrants as group (group.id)}
 							{@const isExpanded = expandedGroupIds.has(group.id)}
-							<tr class="hover:bg-surface-850/30">
-								<td
-									class="max-w-[150px] truncate px-4 py-2.5 font-medium text-surface-200"
+							<TableRow>
+								<TableCell
+									class="max-w-[150px] truncate font-medium text-surface-200"
 									title={group.granteeUserId}
 								>
 									<button
@@ -403,25 +409,25 @@
 										</span>
 										<span>{resolveGranteeName(group.granteeUserId)}</span>
 									</button>
-								</td>
-								<td class="px-4 py-2.5 font-medium text-surface-400">
+								</TableCell>
+								<TableCell class="font-medium text-surface-400">
 									<span
 										class="rounded border border-surface-850 bg-surface-950 px-1.5 py-0.5 font-sans text-[10px] text-surface-400"
 									>
 										{group.grants.length} Actions
 									</span>
-								</td>
-								<td class="px-4 py-2.5 font-mono text-[11px] text-surface-300">
+								</TableCell>
+								<TableCell class="font-mono text-[11px] text-surface-300">
 									{#if group.keyPrefix}
 										{group.keyPrefix}
 									{:else}
 										<span class="text-surface-600 italic">Entire Bucket</span>
 									{/if}
-								</td>
-								<td class="max-w-[120px] truncate px-4 py-2.5 text-surface-400" title={group.note}>
+								</TableCell>
+								<TableCell class="max-w-[120px] truncate text-surface-400" title={group.note}>
 									{group.note || '-'}
-								</td>
-								<td class="px-4 py-2.5">
+								</TableCell>
+								<TableCell>
 									<button
 										onclick={() => handleToggleActiveGroup(group)}
 										class="transition-opacity hover:opacity-80"
@@ -429,8 +435,8 @@
 									>
 										<StatusBadge status={group.isActive ? 'active' : 'inactive'} />
 									</button>
-								</td>
-								<td class="px-4 py-2.5 text-right">
+								</TableCell>
+								<TableCell class="text-right">
 									<button
 										onclick={() => (deleteGroupTarget = group)}
 										class="rounded p-1 text-surface-500 transition-colors hover:bg-danger-500/10 hover:text-danger-400"
@@ -438,17 +444,17 @@
 									>
 										<Trash2Icon size={14} />
 									</button>
-								</td>
-							</tr>
+								</TableCell>
+							</TableRow>
 
 							{#if isExpanded}
 								{#each group.grants as grant, idx (grant.id)}
 									{@const isLast = idx === group.grants.length - 1}
-									<tr
+									<TableRow
 										class="border-none bg-surface-950/20 text-surface-400 hover:bg-surface-850/10"
 									>
-										<td
-											colspan="6"
+										<TableCell
+											colspan={6}
 											class="py-2 pl-12 font-mono text-[11px] whitespace-nowrap text-surface-500"
 										>
 											<div class="flex w-[320px] items-center justify-between">
@@ -471,13 +477,13 @@
 													<Trash2Icon size={11} />
 												</button>
 											</div>
-										</td>
-									</tr>
+										</TableCell>
+									</TableRow>
 								{/each}
 							{/if}
 						{/each}
-					</tbody>
-				</table>
+					</TableBody>
+				</Table>
 			</div>
 		{/if}
 	{/if}

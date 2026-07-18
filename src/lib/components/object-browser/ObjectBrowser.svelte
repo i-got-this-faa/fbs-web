@@ -7,6 +7,14 @@
 	import { contentTypeIconName, formatBytes, keyBasename, timeAgo } from '$lib/utils/format';
 	import { ChevronRightIcon, CopyIcon, DownloadIcon, FolderIcon, SearchIcon } from 'lucide-svelte';
 	import { untrack } from 'svelte';
+	import {
+		Table,
+		TableHeader,
+		TableBody,
+		TableRow,
+		TableHead,
+		TableCell
+	} from '$lib/components/table';
 
 	interface Props {
 		bucketName: string;
@@ -171,110 +179,19 @@
 			{/if}
 		{:else}
 			<div class="min-w-[760px]">
-				<!-- Table Header -->
-				<div
-					class="sticky top-0 z-10 grid grid-cols-[40px_1fr_120px_140px_100px] items-center gap-3 border-b border-surface-800 bg-surface-900 px-4 py-2.5 text-xs font-semibold tracking-wider text-surface-500 uppercase"
-				>
-					<button
-						onclick={handleToggleAll}
-						aria-label="Select all visible objects"
-						disabled={filteredObjectKeys.length === 0}
-						class="flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors disabled:opacity-40 {allFilteredSelected
-							? 'border-accent-500 bg-accent-500 text-white'
-							: 'border-surface-600 bg-surface-800 hover:border-surface-500'}"
-					>
-						{#if allFilteredSelected}
-							<svg
-								width="10"
-								height="10"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="3"
-								stroke-linecap="round"
-								stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg
-							>
-						{/if}
-					</button>
-					<span>Name</span>
-					<span class="text-right">Size</span>
-					<span class="text-right">Modified</span>
-					<span class="text-right">Actions</span>
-				</div>
-
-				<!-- Table Body -->
-				<div
-					class="divide-y divide-surface-800/45 bg-surface-900/50 {objects.isLoading &&
-					!objects.isLoadingMore
-						? 'opacity-70'
-						: ''}"
-				>
-					<!-- Folders -->
-					{#each filteredFolders as folderPrefix (folderPrefix)}
-						{@const name = getFolderDisplayName(folderPrefix, objects.currentPrefix)}
-						{@const stats = objects.folderStats[folderPrefix]}
-						<button
-							type="button"
-							onclick={() => objects.navigateToPrefix(folderPrefix)}
-							class="grid w-full grid-cols-[40px_1fr_120px_140px_100px] items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-surface-850/80"
-						>
-							<span></span>
-							<div class="flex min-w-0 items-center gap-3">
-								<div
-									class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-500/10 text-accent-400"
-								>
-									<FolderIcon size={15} />
-								</div>
-								<div class="min-w-0">
-									<p class="truncate text-sm font-medium text-surface-200">{name}</p>
-									<p class="truncate text-xs text-surface-500">
-										{#if stats?.isLoading}
-											Counting…
-										{:else if stats?.error}
-											Unavailable
-										{:else if stats}
-											{stats.objectCount.toLocaleString()}{stats.isPartial ? '+' : ''} objects
-										{:else}
-											Folder
-										{/if}
-									</p>
-								</div>
-							</div>
-							<span class="text-right text-sm text-surface-400 tabular-nums">
-								{#if stats && !stats.isLoading && !stats.error && stats.objectCount > 0}
-									{formatBytes(stats.size)}{stats.isPartial ? '+' : ''}
-								{:else}
-									—
-								{/if}
-							</span>
-							<span class="text-right text-xs text-surface-500">
-								{#if stats?.updatedAt && !stats.isLoading && !stats.error}
-									{timeAgo(stats.updatedAt)}
-								{:else}
-									—
-								{/if}
-							</span>
-							<div class="flex justify-end pr-2 text-surface-600">
-								<ChevronRightIcon size={14} />
-							</div>
-						</button>
-					{/each}
-
-					<!-- Files (Objects) -->
-					{#each filteredObjects as obj (obj.id)}
-						{@const checked = objects.selectedKeys.includes(obj.key)}
-						<div
-							class="grid grid-cols-[40px_1fr_120px_140px_100px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-850/80"
-						>
-							<div class="flex items-center">
+				<Table class="table-fixed">
+					<TableHeader>
+						<TableRow>
+							<TableHead class="w-[40px]">
 								<button
-									onclick={() => objects.toggleSelected(obj.key)}
-									aria-label="Select {obj.key}"
-									class="flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors {checked
+									onclick={handleToggleAll}
+									aria-label="Select all visible objects"
+									disabled={filteredObjectKeys.length === 0}
+									class="flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors disabled:opacity-40 {allFilteredSelected
 										? 'border-accent-500 bg-accent-500 text-white'
 										: 'border-surface-600 bg-surface-800 hover:border-surface-500'}"
 								>
-									{#if checked}
+									{#if allFilteredSelected}
 										<svg
 											width="10"
 											height="10"
@@ -287,53 +204,148 @@
 										>
 									{/if}
 								</button>
-							</div>
-
-							<!-- Click name to open details modal -->
-							<button
-								type="button"
-								onclick={() => onopenmetadata(obj)}
-								class="group flex min-w-0 items-center gap-3 text-left outline-none"
+							</TableHead>
+							<TableHead class="w-auto">Name</TableHead>
+							<TableHead class="w-[120px] text-right">Size</TableHead>
+							<TableHead class="w-[140px] text-right">Modified</TableHead>
+							<TableHead class="w-[100px] text-right">Actions</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody class={objects.isLoading && !objects.isLoadingMore ? 'opacity-70' : ''}>
+						<!-- Folders -->
+						{#each filteredFolders as folderPrefix (folderPrefix)}
+							{@const name = getFolderDisplayName(folderPrefix, objects.currentPrefix)}
+							{@const stats = objects.folderStats[folderPrefix]}
+							<TableRow
+								onclick={() => objects.navigateToPrefix(folderPrefix)}
+								class="cursor-pointer"
 							>
-								<div
-									class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-800 text-surface-400 transition-colors group-hover:bg-surface-700 group-hover:text-surface-200"
-								>
-									<FileTypeIcon type={contentTypeIconName(obj.contentType)} size={14} />
-								</div>
-								<div class="min-w-0">
-									<p
-										class="truncate text-sm font-medium text-surface-200 transition-colors group-hover:text-accent-400"
+								<TableCell></TableCell>
+								<TableCell>
+									<div class="flex min-w-0 items-center gap-3">
+										<div
+											class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-500/10 text-accent-400"
+										>
+											<FolderIcon size={15} />
+										</div>
+										<div class="min-w-0">
+											<p class="truncate text-sm font-medium text-surface-200">{name}</p>
+											<p class="truncate text-xs text-surface-500">
+												{#if stats?.isLoading}
+													Counting…
+												{:else if stats?.error}
+													Unavailable
+												{:else if stats}
+													{stats.objectCount.toLocaleString()}{stats.isPartial ? '+' : ''} objects
+												{:else}
+													Folder
+												{/if}
+											</p>
+										</div>
+									</div>
+								</TableCell>
+								<TableCell class="text-right text-sm text-surface-400 tabular-nums">
+									{#if stats && !stats.isLoading && !stats.error && stats.objectCount > 0}
+										{formatBytes(stats.size)}{stats.isPartial ? '+' : ''}
+									{:else}
+										—
+									{/if}
+								</TableCell>
+								<TableCell class="text-right text-xs text-surface-500">
+									{#if stats?.updatedAt && !stats.isLoading && !stats.error}
+										{timeAgo(stats.updatedAt)}
+									{:else}
+										—
+									{/if}
+								</TableCell>
+								<TableCell class="text-right text-surface-600">
+									<div class="flex justify-end pr-2">
+										<ChevronRightIcon size={14} />
+									</div>
+								</TableCell>
+							</TableRow>
+						{/each}
+
+						<!-- Files (Objects) -->
+						{#each filteredObjects as obj (obj.id)}
+							{@const checked = objects.selectedKeys.includes(obj.key)}
+							<TableRow>
+								<TableCell>
+									<div class="flex items-center">
+										<button
+											onclick={() => objects.toggleSelected(obj.key)}
+											aria-label="Select {obj.key}"
+											class="flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors {checked
+												? 'border-accent-500 bg-accent-500 text-white'
+												: 'border-surface-600 bg-surface-800 hover:border-surface-500'}"
+										>
+											{#if checked}
+												<svg
+													width="10"
+													height="10"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="3"
+													stroke-linecap="round"
+													stroke-linejoin="round"><polyline points="20 6 9 17 4 12" /></svg
+												>
+											{/if}
+										</button>
+									</div>
+								</TableCell>
+
+								<TableCell>
+									<!-- Click name to open details modal -->
+									<button
+										type="button"
+										onclick={() => onopenmetadata(obj)}
+										class="group flex min-w-0 items-center gap-3 text-left outline-none"
 									>
-										{keyBasename(obj.key)}
-									</p>
-									<p class="truncate text-xs text-surface-500">{obj.contentType}</p>
-								</div>
-							</button>
+										<div
+											class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-800 text-surface-400 transition-colors group-hover:bg-surface-700 group-hover:text-surface-200"
+										>
+											<FileTypeIcon type={contentTypeIconName(obj.contentType)} size={14} />
+										</div>
+										<div class="min-w-0">
+											<p
+												class="truncate text-sm font-medium text-surface-200 transition-colors group-hover:text-accent-400"
+											>
+												{keyBasename(obj.key)}
+											</p>
+											<p class="truncate text-xs text-surface-500">{obj.contentType}</p>
+										</div>
+									</button>
+								</TableCell>
 
-							<span class="text-right text-sm text-surface-400 tabular-nums"
-								>{formatBytes(obj.size)}</span
-							>
-							<span class="text-right text-xs text-surface-500">{timeAgo(obj.updatedAt)}</span>
-
-							<div class="flex items-center justify-end gap-1">
-								<button
-									onclick={() => onopendownload(obj)}
-									class="rounded-md p-1.5 text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-200"
-									aria-label="Download"
-								>
-									<DownloadIcon size={14} />
-								</button>
-								<button
-									onclick={() => oncopyobject(obj)}
-									class="rounded-md p-1.5 text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-200"
-									aria-label="Copy"
-								>
-									<CopyIcon size={14} />
-								</button>
-							</div>
-						</div>
-					{/each}
-				</div>
+								<TableCell class="text-right text-sm text-surface-400 tabular-nums">
+									{formatBytes(obj.size)}
+								</TableCell>
+								<TableCell class="text-right text-xs text-surface-500">
+									{timeAgo(obj.updatedAt)}
+								</TableCell>
+								<TableCell class="text-right">
+									<div class="flex items-center justify-end gap-1">
+										<button
+											onclick={() => onopendownload(obj)}
+											class="rounded-md p-1.5 text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-200"
+											aria-label="Download"
+										>
+											<DownloadIcon size={14} />
+										</button>
+										<button
+											onclick={() => oncopyobject(obj)}
+											class="rounded-md p-1.5 text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-200"
+											aria-label="Copy"
+										>
+											<CopyIcon size={14} />
+										</button>
+									</div>
+								</TableCell>
+							</TableRow>
+						{/each}
+					</TableBody>
+				</Table>
 
 				<!-- Load More for Truncated Listings -->
 				{#if objects.isTruncated}
