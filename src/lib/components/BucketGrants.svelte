@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { getGrantsContext } from '$lib/stores/grants.svelte';
 	import { getKeysContext } from '$lib/stores/keys.svelte';
 	import { getBucketsContext } from '$lib/stores/buckets.svelte';
@@ -7,20 +9,14 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import type { BucketGrant, CreateBucketGrantRequest } from '$lib/types/api';
-	import {
-		ShieldIcon,
-		UserIcon,
-		Trash2Icon,
-		PlusIcon,
-		AlertCircleIcon,
-		SettingsIcon
-	} from 'lucide-svelte';
+	import { ShieldIcon, UserIcon, Trash2Icon, AlertCircleIcon, SettingsIcon } from 'lucide-svelte';
 
 	interface Props {
 		bucketName: string;
+		showCreateModal?: boolean;
 	}
 
-	const { bucketName }: Props = $props();
+	let { bucketName, showCreateModal = $bindable(false) }: Props = $props();
 
 	const grants = getGrantsContext();
 	const keys = getKeysContext();
@@ -30,7 +26,41 @@
 	let loadError = $state<string | null>(null);
 
 	// Modals & Forms State
-	let showCreateModal = $state(false);
+	interface GroupedGrant {
+		id: string;
+		granteeUserId: string;
+		keyPrefix: string;
+		note: string;
+		isActive: boolean;
+		grants: BucketGrant[];
+	}
+
+	let deleteGroupTarget = $state<GroupedGrant | null>(null);
+	let deleteIndividualTarget = $state<BucketGrant | null>(null);
+	const expandedGroupIds = new SvelteSet<string>();
+
+	function toggleGroupExpanded(groupId: string) {
+		if (expandedGroupIds.has(groupId)) {
+			expandedGroupIds.delete(groupId);
+		} else {
+			expandedGroupIds.add(groupId);
+		}
+	}
+
+	$effect(() => {
+		if (showCreateModal) {
+			untrack(() => {
+				createError = null;
+				selectedActions = ['s3:GetObject', 's3:ListBucket'];
+				keyPrefix = '';
+				note = '';
+				granteeType = activeKeys.length > 0 ? 'key' : 'manual';
+				selectedKeyId = activeKeys[0]?.id ?? '';
+				manualUserId = '';
+			});
+		}
+	});
+
 	let granteeType = $state<'key' | 'manual'>('key');
 	let selectedKeyId = $state('');
 	let manualUserId = $state('');
@@ -46,8 +76,6 @@
 	let transferManualUserId = $state('');
 	let transferError = $state<string | null>(null);
 	let isTransferring = $state(false);
-
-	let deleteTarget = $state<BucketGrant | null>(null);
 
 	$effect(() => {
 		if (bucketName) {
@@ -78,7 +106,10 @@
 	function resolveGranteeName(userId: string): string {
 		const key = keys.items.find((k) => k.id === userId);
 		if (key) {
-			return `${key.displayName} (${key.accessKeyId})`;
+			return key.displayName;
+		}
+		if (userId.length > 12) {
+			return userId.slice(0, 8) + '...' + userId.slice(-4);
 		}
 		return userId;
 	}
@@ -86,6 +117,46 @@
 	// Filter active keys to list as potential grantees/new owners
 	const activeKeys = $derived(keys.items.filter((k) => k.isActive));
 	const ownerKey = $derived(keys.items.find((k) => k.id === buckets.selected?.ownerId));
+
+	// Group active keys by displayName (user)
+	const keysByUser = $derived.by(() => {
+		const groups: Record<string, typeof activeKeys> = {};
+		for (const key of activeKeys) {
+			if (!groups[key.displayName]) {
+				groups[key.displayName] = [];
+			}
+			groups[key.displayName].push(key);
+		}
+		return groups;
+	});
+
+	// Group bucket grants by granteeUserId and keyPrefix
+	const groupedGrants = $derived.by(() => {
+		const groups: Record<string, BucketGrant[]> = {};
+		for (const grant of grants.items) {
+			const key = `${grant.granteeUserId}::${grant.keyPrefix || ''}`;
+			if (!groups[key]) {
+				groups[key] = [];
+			}
+			groups[key].push(grant);
+		}
+
+		return Object.entries(groups).map(([keyStr, items]) => {
+			const [granteeUserId, keyPrefix] = keyStr.split('::');
+			const isActive = items.every((item) => item.isActive);
+			const notes = Array.from(new Set(items.map((item) => item.note).filter(Boolean)));
+			const note = notes.join(', ') || '';
+
+			return {
+				id: keyStr,
+				granteeUserId,
+				keyPrefix,
+				note,
+				isActive,
+				grants: items
+			} satisfies GroupedGrant;
+		});
+	});
 
 	const isForbidden = $derived(
 		loadError?.toLowerCase().includes('forbidden') ||
@@ -126,17 +197,6 @@
 		}
 	];
 
-	function openCreateModal() {
-		showCreateModal = true;
-		createError = null;
-		selectedActions = ['s3:GetObject', 's3:ListBucket'];
-		keyPrefix = '';
-		note = '';
-		granteeType = activeKeys.length > 0 ? 'key' : 'manual';
-		selectedKeyId = activeKeys[0]?.id ?? '';
-		manualUserId = '';
-	}
-
 	async function handleCreate(e: Event) {
 		e.preventDefault();
 		createError = null;
@@ -173,18 +233,29 @@
 		}
 	}
 
-	async function handleToggleActive(grant: BucketGrant) {
-		await grants.update(bucketName, grant.id, {
-			isActive: !grant.isActive
-		});
+	async function handleToggleActiveGroup(group: GroupedGrant) {
+		const newStatus = !group.isActive;
+		await Promise.all(
+			group.grants.map((grant) =>
+				grants.update(bucketName, grant.id, {
+					isActive: newStatus
+				})
+			)
+		);
 	}
 
-	async function handleDelete() {
-		if (!deleteTarget) return;
-		const success = await grants.remove(bucketName, deleteTarget.id);
-		if (success) {
-			deleteTarget = null;
-		}
+	async function handleDeleteGroup() {
+		if (!deleteGroupTarget) return;
+		const targets = deleteGroupTarget.grants;
+		deleteGroupTarget = null;
+		await Promise.all(targets.map((grant) => grants.remove(bucketName, grant.id)));
+	}
+
+	async function handleDeleteIndividual() {
+		if (!deleteIndividualTarget) return;
+		const target = deleteIndividualTarget;
+		deleteIndividualTarget = null;
+		await grants.remove(bucketName, target.id);
 	}
 
 	function openTransferModal() {
@@ -233,11 +304,13 @@
 	}
 </script>
 
-<div class="flex flex-col gap-6">
+<div
+	class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-surface-800 bg-surface-900"
+>
 	{#if isLoading}
-		<LoadingSpinner label="Loading bucket permissions..." minHeight="12rem" />
+		<LoadingSpinner label="Loading bucket permissions..." minHeight="14rem" />
 	{:else if isForbidden}
-		<div class="rounded-xl border border-danger-500/20 bg-danger-500/5 p-6 text-center">
+		<div class="m-6 rounded-xl border border-danger-500/20 bg-danger-500/5 p-6 text-center">
 			<ShieldIcon class="mx-auto mb-3 h-8 w-8 text-danger-400" />
 			<h3 class="text-sm font-semibold text-danger-300">Access Denied</h3>
 			<p class="mx-auto mt-2 max-w-md text-xs text-surface-400">
@@ -247,7 +320,7 @@
 		</div>
 	{:else if loadError}
 		<div
-			class="flex items-center gap-3 rounded-xl border border-danger-500/20 bg-danger-500/5 p-4 text-sm text-danger-400"
+			class="m-6 flex items-center gap-3 rounded-xl border border-danger-500/20 bg-danger-500/5 p-4 text-sm text-danger-400"
 		>
 			<AlertCircleIcon class="h-5 w-5 shrink-0" />
 			<div>
@@ -256,154 +329,157 @@
 			</div>
 		</div>
 	{:else}
-		<div class="grid gap-6 lg:grid-cols-[1fr_320px]">
-			<!-- Left side: Grants Table -->
-			<div class="flex flex-col gap-4 rounded-xl border border-surface-800 bg-surface-900 p-5">
-				<div class="flex items-center justify-between gap-4">
-					<div>
-						<h2 class="text-base font-semibold text-surface-200">Sharing & Access Grants</h2>
-						<p class="mt-1 text-xs text-surface-500">
-							Assign S3 data-plane permissions to other users using mini-IAM resource grants.
-						</p>
-					</div>
-					<button
-						onclick={openCreateModal}
-						class="flex items-center gap-1.5 rounded-lg bg-accent-500/15 px-3 py-1.5 text-xs font-semibold text-accent-400 transition-colors hover:bg-accent-500/25"
-					>
-						<PlusIcon size={14} />
-						Add Grant
-					</button>
+		<!-- Card Header with Bucket Owner Info -->
+		<div class="flex h-12 shrink-0 items-center justify-between border-b border-surface-800 px-4">
+			<div>
+				<h2 class="text-base font-semibold text-surface-200">Sharing & Access Grants</h2>
+			</div>
+			<div class="flex items-center gap-2 text-xs">
+				<div
+					class="flex items-center gap-1.5 rounded-lg border border-surface-800 bg-surface-950 px-3 py-1.5 text-[11px] text-surface-300"
+				>
+					<UserIcon size={12} class="font-mono text-accent-400" />
+					<span class="text-surface-500">Owner:</span>
+					<span class="font-semibold text-surface-200">
+						{#if ownerKey}
+							{ownerKey.displayName}
+						{:else if buckets.selected?.ownerId}
+							{buckets.selected.ownerId.slice(0, 8)}...{buckets.selected.ownerId.slice(-4)}
+						{:else}
+							Unknown Owner
+						{/if}
+					</span>
 				</div>
+				<button
+					onclick={openTransferModal}
+					class="rounded-lg border border-surface-800 bg-surface-850/50 px-3 py-1.5 text-[11px] font-semibold text-surface-300 transition-colors hover:bg-surface-800"
+				>
+					<SettingsIcon size={12} class="mr-1 inline text-surface-400" />
+					Transfer
+				</button>
+			</div>
+		</div>
 
-				{#if grants.items.length === 0}
-					<div class="py-12 text-center">
-						<ShieldIcon class="text-surface-650 mx-auto mb-2.5 h-7 w-7" />
-						<p class="text-xs font-medium text-surface-400">No active grants</p>
-						<p class="mt-1 text-[11px] text-surface-600">
-							This bucket is currently private. Click "Add Grant" to share access.
-						</p>
-					</div>
-				{:else}
-					<div class="overflow-x-auto">
-						<table class="w-full border-collapse text-left text-xs">
-							<thead>
-								<tr
-									class="border-b border-surface-800 text-[10px] font-semibold tracking-wider text-surface-500 uppercase"
+		{#if groupedGrants.length === 0}
+			<div class="flex flex-1 flex-col items-center justify-center py-12 text-center">
+				<ShieldIcon class="text-surface-650 mx-auto mb-2.5 h-7 w-7" />
+				<p class="text-xs font-medium text-surface-400">No active grants</p>
+				<p class="mt-1 text-[11px] text-surface-600">
+					This bucket is currently private. Click "Add Grant" to share access.
+				</p>
+			</div>
+		{:else}
+			<div class="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
+				<table class="w-full table-fixed border-collapse text-left text-xs">
+					<thead>
+						<tr
+							class="sticky top-0 z-10 border-b border-surface-800 bg-surface-900 text-xs font-semibold tracking-wider text-surface-500 uppercase"
+						>
+							<th class="w-[22%] px-4 py-2.5 font-medium">Grantee</th>
+							<th class="w-[28%] px-4 py-2.5 font-medium">Action</th>
+							<th class="w-[15%] px-4 py-2.5 font-medium">Prefix</th>
+							<th class="w-[20%] px-4 py-2.5 font-medium">Note</th>
+							<th class="w-[90px] px-4 py-2.5 font-medium">Status</th>
+							<th class="w-[60px] px-4 py-2.5 text-right font-medium">Actions</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-surface-850">
+						{#each groupedGrants as group (group.id)}
+							{@const isExpanded = expandedGroupIds.has(group.id)}
+							<tr class="hover:bg-surface-850/30">
+								<td
+									class="max-w-[150px] truncate px-4 py-2.5 font-medium text-surface-200"
+									title={group.granteeUserId}
 								>
-									<th class="pb-2.5 font-medium">Grantee</th>
-									<th class="pb-2.5 font-medium">Action</th>
-									<th class="pb-2.5 font-medium">Prefix</th>
-									<th class="pb-2.5 font-medium">Note</th>
-									<th class="pb-2.5 font-medium">Status</th>
-									<th class="pb-2.5 text-right font-medium">Actions</th>
-								</tr>
-							</thead>
-							<tbody class="divide-y divide-surface-850">
-								{#each grants.items as grant (grant.id)}
-									<tr class="hover:bg-surface-850/30">
-										<td
-											class="max-w-[150px] truncate py-3 font-medium text-surface-200"
-											title={grant.granteeUserId}
+									<button
+										type="button"
+										onclick={() => toggleGroupExpanded(group.id)}
+										class="flex items-center gap-1.5 text-left text-xs font-semibold text-surface-300 transition-colors hover:text-accent-400 focus:outline-none"
+									>
+										<span
+											class="inline-block w-3 text-center font-mono text-[10px] text-surface-500"
 										>
-											{resolveGranteeName(grant.granteeUserId)}
-										</td>
-										<td class="py-3">
-											<code
-												class="rounded border border-surface-850 bg-surface-950 px-1.5 py-0.5 font-mono text-[10px] text-accent-400"
-											>
-												{grant.action}
-											</code>
-										</td>
-										<td class="py-3 font-mono text-[11px] text-surface-300">
-											{#if grant.keyPrefix}
-												{grant.keyPrefix}
-											{:else}
-												<span class="text-surface-600 italic">Entire Bucket</span>
-											{/if}
-										</td>
-										<td class="max-w-[120px] truncate py-3 text-surface-400" title={grant.note}>
-											{grant.note || '-'}
-										</td>
-										<td class="py-3">
-											<button
-												onclick={() => handleToggleActive(grant)}
-												class="transition-opacity hover:opacity-80"
-												title="Click to toggle status"
-											>
-												<StatusBadge status={grant.isActive ? 'active' : 'inactive'} />
-											</button>
-										</td>
-										<td class="py-3 text-right">
-											<button
-												onclick={() => (deleteTarget = grant)}
-												class="rounded p-1 text-surface-500 transition-colors hover:bg-danger-500/10 hover:text-danger-400"
-												aria-label="Delete grant"
-											>
-												<Trash2Icon size={14} />
-											</button>
+											{isExpanded ? '▼' : '▶'}
+										</span>
+										<span>{resolveGranteeName(group.granteeUserId)}</span>
+									</button>
+								</td>
+								<td class="px-4 py-2.5 font-medium text-surface-400">
+									<span
+										class="rounded border border-surface-850 bg-surface-950 px-1.5 py-0.5 font-sans text-[10px] text-surface-400"
+									>
+										{group.grants.length} Actions
+									</span>
+								</td>
+								<td class="px-4 py-2.5 font-mono text-[11px] text-surface-300">
+									{#if group.keyPrefix}
+										{group.keyPrefix}
+									{:else}
+										<span class="text-surface-600 italic">Entire Bucket</span>
+									{/if}
+								</td>
+								<td class="max-w-[120px] truncate px-4 py-2.5 text-surface-400" title={group.note}>
+									{group.note || '-'}
+								</td>
+								<td class="px-4 py-2.5">
+									<button
+										onclick={() => handleToggleActiveGroup(group)}
+										class="transition-opacity hover:opacity-80"
+										title="Click to toggle status"
+									>
+										<StatusBadge status={group.isActive ? 'active' : 'inactive'} />
+									</button>
+								</td>
+								<td class="px-4 py-2.5 text-right">
+									<button
+										onclick={() => (deleteGroupTarget = group)}
+										class="rounded p-1 text-surface-500 transition-colors hover:bg-danger-500/10 hover:text-danger-400"
+										aria-label="Delete grant"
+									>
+										<Trash2Icon size={14} />
+									</button>
+								</td>
+							</tr>
+
+							{#if isExpanded}
+								{#each group.grants as grant, idx (grant.id)}
+									{@const isLast = idx === group.grants.length - 1}
+									<tr
+										class="border-none bg-surface-950/20 text-surface-400 hover:bg-surface-850/10"
+									>
+										<td
+											colspan="6"
+											class="py-2 pl-12 font-mono text-[11px] whitespace-nowrap text-surface-500"
+										>
+											<div class="flex w-[320px] items-center justify-between">
+												<div class="flex items-center gap-2">
+													<span class="font-mono text-surface-700 select-none">
+														{isLast ? '└──' : '├──'}
+													</span>
+													<code
+														class="rounded border border-surface-850 bg-surface-950/50 px-1.5 py-0.5 font-mono text-[10px] text-accent-400"
+													>
+														{grant.action}
+													</code>
+												</div>
+												<button
+													type="button"
+													onclick={() => (deleteIndividualTarget = grant)}
+													class="rounded p-0.5 text-surface-600 transition-colors hover:bg-danger-500/10 hover:text-danger-400"
+													title="Remove this permission"
+												>
+													<Trash2Icon size={11} />
+												</button>
+											</div>
 										</td>
 									</tr>
 								{/each}
-							</tbody>
-						</table>
-					</div>
-				{/if}
-			</div>
-
-			<!-- Right side: Ownership & Stats Card -->
-			<div class="flex flex-col gap-5 rounded-xl border border-surface-800 bg-surface-900 p-5">
-				<div>
-					<h3 class="text-sm font-semibold text-surface-200">Bucket Details</h3>
-					<p class="mt-1 text-xs text-surface-500">Metadata and administrative actions.</p>
-				</div>
-
-				<div class="space-y-4 divide-y divide-surface-850">
-					<!-- Owner Info -->
-					<div class="pt-1">
-						<div class="flex items-center gap-2 text-xs font-semibold text-surface-400">
-							<UserIcon size={14} class="text-accent-400" />
-							Bucket Owner
-						</div>
-						<div class="mt-2 rounded-lg border border-surface-850 bg-surface-950 p-3">
-							{#if ownerKey}
-								<p class="text-sm font-semibold text-surface-200">
-									{ownerKey.displayName}
-								</p>
-								<p class="mt-0.5 font-mono text-[10px] text-surface-500" title={ownerKey.id}>
-									ID: {ownerKey.id.slice(0, 8)}...{ownerKey.id.slice(-4)}
-								</p>
-							{:else if buckets.selected?.ownerId}
-								<p class="font-mono text-xs text-surface-300" title={buckets.selected.ownerId}>
-									ID: {buckets.selected.ownerId.slice(0, 8)}...{buckets.selected.ownerId.slice(-4)}
-								</p>
-							{:else}
-								<p class="text-xs text-surface-500 italic">Unknown Owner</p>
 							{/if}
-						</div>
-
-						<button
-							onclick={openTransferModal}
-							class="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-surface-800 bg-surface-850/50 py-2 text-xs font-medium text-surface-300 transition-colors hover:bg-surface-800"
-						>
-							<SettingsIcon size={13} />
-							Transfer Ownership
-						</button>
-					</div>
-
-					<!-- S3 Compatibility Status -->
-					<div class="pt-4">
-						<div class="flex items-center gap-2 text-xs font-semibold text-surface-400">
-							<ShieldIcon size={14} class="text-accent-400" />
-							Access Model
-						</div>
-						<p class="mt-2 text-xs leading-relaxed text-surface-400">
-							FBS uses a sqlite-backed policy evaluator. Bucket owners and admins bypass grant
-							checks. Other keys must have a matching active grant to perform S3 actions.
-						</p>
-					</div>
-				</div>
+						{/each}
+					</tbody>
+				</table>
 			</div>
-		</div>
+		{/if}
 	{/if}
 </div>
 
@@ -451,8 +527,14 @@
 					bind:value={selectedKeyId}
 					class="w-full rounded-lg border border-surface-700 bg-surface-800 px-3 py-2 text-xs text-surface-100 outline-none focus:border-accent-500"
 				>
-					{#each activeKeys as key (key.id)}
-						<option value={key.id}>{key.displayName} ({key.accessKeyId})</option>
+					{#each Object.entries(keysByUser) as [user, userKeys] (user)}
+						<optgroup label={user}>
+							{#each userKeys as key (key.id)}
+								<option value={key.id}>
+									{key.accessKeyId} ({key.role})
+								</option>
+							{/each}
+						</optgroup>
 					{/each}
 				</select>
 			</div>
@@ -596,12 +678,16 @@
 					bind:value={transferSelectedKeyId}
 					class="w-full rounded-lg border border-surface-700 bg-surface-800 px-3 py-2 text-xs text-surface-100 outline-none focus:border-accent-500"
 				>
-					{#each activeKeys as key (key.id)}
-						<option value={key.id} disabled={key.id === buckets.selected?.ownerId}>
-							{key.displayName} ({key.accessKeyId}) {key.id === buckets.selected?.ownerId
-								? '(Current Owner)'
-								: ''}
-						</option>
+					{#each Object.entries(keysByUser) as [user, userKeys] (user)}
+						<optgroup label={user}>
+							{#each userKeys as key (key.id)}
+								<option value={key.id} disabled={key.id === buckets.selected?.ownerId}>
+									{key.accessKeyId} ({key.role}){key.id === buckets.selected?.ownerId
+										? ' (Current Owner)'
+										: ''}
+								</option>
+							{/each}
+						</optgroup>
 					{/each}
 				</select>
 			</div>
@@ -649,11 +735,21 @@
 </Modal>
 
 <ConfirmDialog
-	open={deleteTarget !== null}
-	title="Remove Sharing Grant"
-	description="Are you sure you want to remove this grant? The user will immediately lose S3 access granted by this row."
-	confirmLabel="Remove Grant"
+	open={deleteGroupTarget !== null}
+	title="Remove Sharing Grant Group"
+	description="Are you sure you want to remove all sharing grants for this grantee and prefix? The grantee will immediately lose all associated permissions."
+	confirmLabel="Remove Group"
 	destructive
-	onconfirm={handleDelete}
-	oncancel={() => (deleteTarget = null)}
+	onconfirm={handleDeleteGroup}
+	oncancel={() => (deleteGroupTarget = null)}
+/>
+
+<ConfirmDialog
+	open={deleteIndividualTarget !== null}
+	title="Remove Permission"
+	description="Are you sure you want to remove this specific permission? The grantee will lose this action immediately."
+	confirmLabel="Remove Permission"
+	destructive
+	onconfirm={handleDeleteIndividual}
+	oncancel={() => (deleteIndividualTarget = null)}
 />

@@ -36,6 +36,10 @@
 	const pageTitle = $derived(
 		breadcrumbs.length > 0 ? breadcrumbs[breadcrumbs.length - 1].label : 'Dashboard'
 	);
+
+	const activeTab = $derived(
+		page.url.searchParams.get('tab') === 'permissions' ? 'permissions' : 'objects'
+	);
 </script>
 
 <header
@@ -72,7 +76,37 @@
 						<span class="text-surface-600">/</span>
 					{/if}
 					{#if i === breadcrumbs.length - 1}
-						<span class="font-medium text-surface-200">{crumb.label}</span>
+						<div class="flex items-center gap-2">
+							<span class="font-medium text-surface-200">{crumb.label}</span>
+							{#if page.route.id === '/app/buckets/[bucket]'}
+								<div
+									class="ml-2 flex items-center gap-1 rounded-lg border border-surface-850 bg-surface-950 p-0.5"
+								>
+									<a
+										href="?tab=objects"
+										data-sveltekit-noscroll
+										data-sveltekit-replacestate
+										class="rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors {activeTab ===
+										'objects'
+											? 'bg-surface-800 text-accent-400'
+											: 'text-surface-400 hover:text-surface-200'}"
+									>
+										Objects
+									</a>
+									<a
+										href="?tab=permissions"
+										data-sveltekit-noscroll
+										data-sveltekit-replacestate
+										class="rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors {activeTab ===
+										'permissions'
+											? 'bg-surface-800 text-accent-400'
+											: 'text-surface-400 hover:text-surface-200'}"
+									>
+										Permissions
+									</a>
+								</div>
+							{/if}
+						</div>
 					{:else}
 						<a href={crumb.href} class="text-surface-500 transition-colors hover:text-surface-300">
 							{crumb.label}

@@ -100,21 +100,22 @@
 	class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-surface-800 bg-surface-900"
 >
 	<!-- Local breadcrumbs and Search -->
-	<div
-		class="flex flex-col gap-3 border-b border-surface-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-	>
+	<div class="flex h-12 shrink-0 items-center justify-between border-b border-surface-800 px-4">
 		<!-- Breadcrumbs -->
-		<nav class="flex flex-wrap items-center gap-1.5 text-sm" aria-label="Bucket navigation">
+		<nav
+			class="flex flex-wrap items-center gap-1.5 text-base font-semibold"
+			aria-label="Bucket navigation"
+		>
 			{#each objects.breadcrumbs as crumb, i (crumb.prefix)}
 				{#if i > 0}
-					<span class="text-surface-600">/</span>
+					<span class="font-normal text-surface-600">/</span>
 				{/if}
 				{#if i === objects.breadcrumbs.length - 1}
-					<span class="font-medium text-surface-200">{crumb.label}</span>
+					<span class="text-surface-200">{crumb.label}</span>
 				{:else}
 					<button
 						onclick={() => objects.navigateToPrefix(crumb.prefix)}
-						class="text-surface-400 transition-colors hover:text-accent-400"
+						class="font-semibold text-surface-400 transition-colors hover:text-accent-400"
 					>
 						{crumb.label}
 					</button>

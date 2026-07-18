@@ -14,7 +14,14 @@
 	import { getConnectionContext } from '$lib/stores/connection.svelte';
 	import type { ObjectMetadata, StorageObject } from '$lib/types/api';
 	import { formatBytes, formatDate } from '$lib/utils/format';
-	import { CalendarIcon, FolderIcon, HardDriveIcon, UploadIcon, XIcon } from 'lucide-svelte';
+	import {
+		CalendarIcon,
+		FolderIcon,
+		HardDriveIcon,
+		UploadIcon,
+		XIcon,
+		PlusIcon
+	} from 'lucide-svelte';
 	import { onDestroy, untrack } from 'svelte';
 
 	const buckets = getBucketsContext();
@@ -27,7 +34,10 @@
 	const summaryObjectCount = $derived(bucketSummary?.objectCount ?? 0);
 	const summaryBytes = $derived(bucketSummary?.totalObjectBytes ?? 0);
 
-	let activeTab = $state<'objects' | 'permissions'>('objects');
+	const activeTab = $derived(
+		page.url.searchParams.get('tab') === 'permissions' ? 'permissions' : 'objects'
+	);
+	let showCreateModal = $state(false);
 	let deleteBucketOpen = $state(false);
 	let deleteSelectedOpen = $state(false);
 	let copyTarget = $state<StorageObject | null>(null);
@@ -225,22 +235,30 @@
 
 	<!-- Action Buttons -->
 	<div class="flex items-center gap-2">
+		{#if activeTab === 'objects' && selectedCount > 0}
+			<button
+				onclick={() => (deleteSelectedOpen = true)}
+				class="rounded-lg bg-danger-500/15 px-3.5 py-1.5 text-sm font-medium text-danger-400 transition-colors hover:bg-danger-500/25"
+			>
+				Delete Selected ({selectedCount})
+			</button>
+		{/if}
 		{#if activeTab === 'objects'}
-			{#if selectedCount > 0}
-				<button
-					onclick={() => (deleteSelectedOpen = true)}
-					class="rounded-lg bg-danger-500/15 px-3.5 py-1.5 text-sm font-medium text-danger-400 transition-colors hover:bg-danger-500/25"
-				>
-					Delete Selected ({selectedCount})
-				</button>
-			{/if}
 			<button
 				onclick={triggerUpload}
 				disabled={objects.isUploading}
-				class="flex items-center gap-1.5 rounded-lg bg-accent-500/15 px-3.5 py-1.5 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25 disabled:opacity-50"
+				class="flex w-[115px] items-center justify-center gap-1.5 rounded-lg bg-accent-500/15 py-1.5 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25 disabled:opacity-50"
 			>
 				<UploadIcon size={14} />
 				{objects.isUploading ? 'Uploading...' : 'Upload'}
+			</button>
+		{:else if activeTab === 'permissions'}
+			<button
+				onclick={() => (showCreateModal = true)}
+				class="flex w-[115px] items-center justify-center gap-1.5 rounded-lg bg-accent-500/15 py-1.5 text-sm font-medium whitespace-nowrap text-accent-400 transition-colors hover:bg-accent-500/25"
+			>
+				<PlusIcon size={14} />
+				Add Grant
 			</button>
 		{/if}
 		<button
@@ -299,65 +317,46 @@
 		</div>
 	{/if}
 
-	<!-- Tab Bar -->
-	<div class="mb-2 flex shrink-0 border-b border-surface-800">
-		<button
-			onclick={() => (activeTab = 'objects')}
-			class="border-b-2 px-5 py-2.5 text-xs font-semibold transition-colors {activeTab === 'objects'
-				? 'border-accent-500 font-bold text-accent-400'
-				: 'border-transparent text-surface-400 hover:text-surface-200'}"
-		>
-			Objects
-		</button>
-		<button
-			onclick={() => (activeTab = 'permissions')}
-			class="border-b-2 px-5 py-2.5 text-xs font-semibold transition-colors {activeTab ===
-			'permissions'
-				? 'border-accent-500 font-bold text-accent-400'
-				: 'border-transparent text-surface-400 hover:text-surface-200'}"
-		>
-			Permissions & Sharing
-		</button>
+	<div
+		class="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+		class:hidden={activeTab !== 'objects'}
+		role="region"
+		aria-label="Object browser"
+		ondragover={handleDragOver}
+		ondragleave={handleDragLeave}
+		ondrop={handleDrop}
+	>
+		{#if isDragging && !objects.isUploading}
+			<div
+				class="absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-accent-500/50 bg-accent-500/5 backdrop-blur-sm"
+			>
+				<div class="text-center">
+					<UploadIcon size={32} class="mx-auto mb-2 text-accent-400" />
+					<p class="text-sm font-medium text-accent-400">Drop files to upload here</p>
+					{#if objects.currentPrefix}
+						<p class="mt-1 text-xs text-surface-500">into {objects.currentPrefix}</p>
+					{/if}
+				</div>
+			</div>
+		{/if}
+
+		{#if bucketName}
+			<ObjectBrowser
+				{bucketName}
+				refreshKey={browserRefreshKey}
+				onopenmetadata={openMetadataModal}
+				oncopyobject={openCopyModal}
+				onopendownload={(obj) => (downloadTarget = obj)}
+			/>
+		{/if}
 	</div>
 
-	{#if activeTab === 'objects'}
-		<div
-			class="relative flex min-h-0 flex-1 flex-col overflow-hidden"
-			role="region"
-			aria-label="Object browser"
-			ondragover={handleDragOver}
-			ondragleave={handleDragLeave}
-			ondrop={handleDrop}
-		>
-			{#if isDragging && !objects.isUploading}
-				<div
-					class="absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-accent-500/50 bg-accent-500/5 backdrop-blur-sm"
-				>
-					<div class="text-center">
-						<UploadIcon size={32} class="mx-auto mb-2 text-accent-400" />
-						<p class="text-sm font-medium text-accent-400">Drop files to upload here</p>
-						{#if objects.currentPrefix}
-							<p class="mt-1 text-xs text-surface-500">into {objects.currentPrefix}</p>
-						{/if}
-					</div>
-				</div>
-			{/if}
-
-			{#if bucketName}
-				<ObjectBrowser
-					{bucketName}
-					refreshKey={browserRefreshKey}
-					onopenmetadata={openMetadataModal}
-					oncopyobject={openCopyModal}
-					onopendownload={(obj) => (downloadTarget = obj)}
-				/>
-			{/if}
-		</div>
-	{:else}
-		<div class="min-h-0 flex-1 overflow-y-auto">
-			<BucketGrants {bucketName} />
-		</div>
-	{/if}
+	<div
+		class="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+		class:hidden={activeTab !== 'permissions'}
+	>
+		<BucketGrants {bucketName} bind:showCreateModal />
+	</div>
 </div>
 
 <input bind:this={fileInput} type="file" multiple class="hidden" onchange={handleFileSelect} />
