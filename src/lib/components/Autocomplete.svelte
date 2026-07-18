@@ -195,6 +195,16 @@
 				isOpen = true;
 			}}
 			onkeydown={handleKeyDown}
+			onblur={(e) => {
+				// Close when focus leaves the component entirely (Tab navigation)
+				if (!containerEl?.contains(e.relatedTarget as Node)) {
+					isOpen = false;
+					if (!allowCustom) {
+						const selected = items.find((item) => item.id === value);
+						searchQuery = selected ? selected.label : '';
+					}
+				}
+			}}
 			class="w-full rounded-lg border border-surface-700 bg-surface-800 py-2 pr-10 pl-3 text-xs text-surface-100 placeholder-surface-500 outline-none focus:border-accent-500 disabled:opacity-50"
 		/>
 
