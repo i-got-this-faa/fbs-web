@@ -5,7 +5,7 @@
 	import { getObjectsContext } from '$lib/stores/objects.svelte';
 	import type { StorageObject } from '$lib/types/api';
 	import { contentTypeIconName, formatBytes, keyBasename, timeAgo } from '$lib/utils/format';
-	import { ChevronRightIcon, CopyIcon, DownloadIcon, FolderIcon, SearchIcon } from 'lucide-svelte';
+	import { ChevronRightIcon, CopyIcon, LinkIcon, FolderIcon, SearchIcon } from 'lucide-svelte';
 	import { untrack } from 'svelte';
 	import {
 		Table,
@@ -329,9 +329,9 @@
 										<button
 											onclick={() => onopendownload(obj)}
 											class="rounded-md p-1.5 text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-200"
-											aria-label="Download"
+											aria-label="Copy link"
 										>
-											<DownloadIcon size={14} />
+											<LinkIcon size={14} />
 										</button>
 										<button
 											onclick={() => oncopyobject(obj)}

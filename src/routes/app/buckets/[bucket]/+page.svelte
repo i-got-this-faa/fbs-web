@@ -376,10 +376,6 @@
 	open={downloadTarget !== null}
 	object={downloadTarget}
 	onclose={closeDownloadModal}
-	ondownload={(expiresIn) => {
-		if (downloadTarget) void objects.download(downloadTarget.key, expiresIn);
-		closeDownloadModal();
-	}}
 	ongeneratelink={handleGenerateLink}
 />
 
