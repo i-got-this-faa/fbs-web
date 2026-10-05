@@ -6,6 +6,7 @@ import type {
 } from '$lib/types/api';
 import { getConnectionContext } from './connection.svelte';
 import { getBucketsContext } from './buckets.svelte';
+import { mergeGrants } from '$lib/utils/grants';
 
 class GrantsStore {
 	items = $state<BucketGrant[]>([]);
@@ -64,7 +65,7 @@ class GrantsStore {
 		this.error = null;
 		try {
 			const created = await client.createBucketGrants(bucket, req);
-			this.items.push(...created);
+			this.items = mergeGrants(this.items, created);
 			return true;
 		} catch (err) {
 			this.error = err instanceof Error ? err.message : 'Failed to create grants';

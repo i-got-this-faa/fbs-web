@@ -18,6 +18,7 @@ import type {
 	ObjectListingV1,
 	ObjectMetadata,
 	PublicObjectUrl,
+	PublicObjectUrlOptions,
 	S3BucketList,
 	ServerConfig,
 	StorageObject,
@@ -28,6 +29,10 @@ import type {
 	CreateBucketGrantRequest,
 	UpdateBucketGrantRequest
 } from '$lib/types/api';
+import type { CreateShareLinkRequest, ShareLink } from '$lib/types/api';
+import { MockShareLinks } from './mock-share-links';
+import { createMockGrantBatch } from './mock-grants';
+import { mergeGrants } from '$lib/utils/grants';
 
 /** Simulates network delay */
 const delay = (ms = 200) => new Promise((r) => setTimeout(r, ms + Math.random() * 100));
@@ -241,6 +246,30 @@ const MOCK_KEYS: AccessKey[] = [
  * Returns realistic fake data matching the SQLite schema.
  */
 export class MockFbsClient implements FbsClient {
+	private shareLinks = new MockShareLinks();
+
+	async createShareLink(req: CreateShareLinkRequest): Promise<ShareLink> {
+		await delay();
+		if (
+			!this.objects.some(
+				(object) =>
+					object.bucketName === req.bucket.trim() && object.key === req.key.replace(/^\//, '')
+			)
+		) {
+			throw new Error('Object not found');
+		}
+		return this.shareLinks.create(req);
+	}
+
+	async listShareLinks(bucket?: string): Promise<ShareLink[]> {
+		await delay();
+		return this.shareLinks.list(bucket);
+	}
+
+	async deleteShareLink(code: string): Promise<void> {
+		await delay();
+		this.shareLinks.remove(code);
+	}
 	private buckets = [...MOCK_BUCKETS];
 	private objects = [...MOCK_OBJECTS];
 	private keys = [...MOCK_KEYS];
@@ -325,12 +354,13 @@ export class MockFbsClient implements FbsClient {
 				actorUserId: 'usr_001',
 				createdAt: isoAgo(1)
 			}
-		]
+		] satisfies ActivityItem[];
+		const filtered = activity
 			.filter((item) => !opts?.bucket || item.bucket === opts.bucket)
 			.filter((item) => !opts?.action || item.action === opts.action)
 			.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
-		return activity.slice(0, limit);
+		return filtered.slice(0, limit);
 	}
 
 	// ── Buckets ────────────────────────────────────────────────────────────
@@ -368,6 +398,7 @@ export class MockFbsClient implements FbsClient {
 		if (idx === -1) throw new Error(`Bucket "${name}" not found`);
 		this.buckets.splice(idx, 1);
 		this.objects = this.objects.filter((o) => o.bucketName !== name);
+		this.shareLinks.removeBucket(name);
 	}
 
 	async emptyBucket(name: string): Promise<void> {
@@ -437,19 +468,25 @@ export class MockFbsClient implements FbsClient {
 	async createPublicObjectUrl(
 		bucket: string,
 		key: string,
-		expiresInSeconds?: number
+		options?: PublicObjectUrlOptions
 	): Promise<PublicObjectUrl> {
 		await delay();
 		if (!this.objects.some((object) => object.bucketName === bucket && object.key === key)) {
 			throw new Error(`Object "${key}" not found in bucket "${bucket}"`);
 		}
 
-		const seconds = expiresInSeconds ?? 3600;
+		const seconds = options?.expiresInSeconds ?? 3600;
+		if (!Number.isSafeInteger(seconds) || seconds <= 0 || seconds > 86400) {
+			throw new Error('expires_in_seconds exceeds maximum TTL or is invalid');
+		}
 		const expiresAt = new Date(Date.now() + seconds * 1000).toISOString();
+		const dispositionQuery = options?.responseContentDisposition
+			? `&response-content-disposition=${encodeURIComponent(options.responseContentDisposition)}`
+			: '';
 		return {
 			url:
 				this.getObjectUrl(bucket, key) +
-				`?expires=${Math.floor((Date.now() + seconds * 1000) / 1000)}&signature=mock-signature`,
+				`?expires=${Math.floor((Date.now() + seconds * 1000) / 1000)}&signature=mock-signature${dispositionQuery}`,
 			expiresAt,
 			cacheControl: `public, max-age=${seconds}, must-revalidate`
 		};
@@ -685,29 +722,10 @@ export class MockFbsClient implements FbsClient {
 
 	async createBucketGrants(bucket: string, req: CreateBucketGrantRequest): Promise<BucketGrant[]> {
 		await delay();
-		let granteeUserId = req.granteeUserId || '';
-		if (req.granteeAccessKeyId) {
-			const foundKey = this.keys.find(
-				(k) =>
-					k.accessKeyId === req.granteeAccessKeyId || k.sigV4AccessKeyId === req.granteeAccessKeyId
-			);
-			if (foundKey) granteeUserId = foundKey.id;
-			else granteeUserId = 'usr_unknown';
-		}
-		const created: BucketGrant[] = req.actions.map((action) => ({
-			id: `gnt_${crypto.randomUUID()}`,
-			bucket,
-			granteeUserId,
-			action,
-			keyPrefix: req.keyPrefix,
-			isActive: true,
-			createdBy: 'usr_001',
-			note: req.note,
-			createdAt: isoNow(),
-			updatedAt: isoNow()
-		}));
-		this.grants.push(...created);
-		return created;
+		if (!this.buckets.some((item) => item.name === bucket)) throw new Error('Bucket not found');
+		const returned = createMockGrantBatch(this.grants, this.keys, bucket, req);
+		this.grants = mergeGrants(this.grants, returned);
+		return returned.map((grant) => ({ ...grant }));
 	}
 
 	async updateBucketGrant(

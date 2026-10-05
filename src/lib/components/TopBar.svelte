@@ -36,16 +36,12 @@
 	const pageTitle = $derived(
 		breadcrumbs.length > 0 ? breadcrumbs[breadcrumbs.length - 1].label : 'Dashboard'
 	);
-
-	const activeTab = $derived(
-		page.url.searchParams.get('tab') === 'permissions' ? 'permissions' : 'objects'
-	);
 </script>
 
 <header
 	class="flex h-14 shrink-0 items-center justify-between border-b border-surface-800 bg-surface-900/50 px-4 backdrop-blur-sm md:px-6"
 >
-	<div class="flex items-center gap-3">
+	<div class="flex min-w-0 items-center gap-3">
 		<!-- Mobile menu button -->
 		<button
 			class="rounded-lg p-1.5 text-surface-400 transition-colors hover:bg-surface-800 hover:text-surface-200 md:hidden"
@@ -70,45 +66,23 @@
 
 		<!-- Page title + breadcrumbs -->
 		{#if breadcrumbs.length > 1}
-			<nav class="flex items-center gap-1.5 text-sm" aria-label="Breadcrumb">
+			<nav
+				class="flex min-w-0 items-center gap-1.5 overflow-hidden text-sm"
+				aria-label="Breadcrumb"
+			>
 				{#each breadcrumbs as crumb, i (crumb.href)}
 					{#if i > 0}
-						<span class="text-surface-600">/</span>
+						<span class="hidden text-surface-600 sm:inline">/</span>
 					{/if}
 					{#if i === breadcrumbs.length - 1}
-						<div class="flex items-center gap-2">
-							<span class="font-medium text-surface-200">{crumb.label}</span>
-							{#if page.route.id === '/app/buckets/[bucket]'}
-								<div
-									class="ml-2 flex items-center gap-1 rounded-lg border border-surface-850 bg-surface-950 p-0.5"
-								>
-									<a
-										href="?tab=objects"
-										data-sveltekit-noscroll
-										data-sveltekit-replacestate
-										class="rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors {activeTab ===
-										'objects'
-											? 'bg-surface-800 text-accent-400'
-											: 'text-surface-400 hover:text-surface-200'}"
-									>
-										Objects
-									</a>
-									<a
-										href="?tab=permissions"
-										data-sveltekit-noscroll
-										data-sveltekit-replacestate
-										class="rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors {activeTab ===
-										'permissions'
-											? 'bg-surface-800 text-accent-400'
-											: 'text-surface-400 hover:text-surface-200'}"
-									>
-										Permissions
-									</a>
-								</div>
-							{/if}
+						<div class="flex min-w-0 items-center gap-2">
+							<span class="truncate font-medium text-surface-200">{crumb.label}</span>
 						</div>
 					{:else}
-						<a href={crumb.href} class="text-surface-500 transition-colors hover:text-surface-300">
+						<a
+							href={crumb.href}
+							class="hidden shrink-0 text-surface-500 transition-colors hover:text-surface-300 sm:inline"
+						>
 							{crumb.label}
 						</a>
 					{/if}
@@ -121,7 +95,7 @@
 
 	<!-- Page-specific actions -->
 	{#if pageActions.actions}
-		<div class="flex items-center gap-2">
+		<div class="flex shrink-0 items-center gap-2">
 			{@render pageActions.actions()}
 		</div>
 	{/if}

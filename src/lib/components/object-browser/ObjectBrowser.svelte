@@ -21,16 +21,10 @@
 		refreshKey?: number;
 		onopenmetadata: (object: StorageObject) => void;
 		oncopyobject: (object: StorageObject) => void;
-		onopendownload: (object: StorageObject) => void;
+		onshare: (object: StorageObject) => void;
 	}
 
-	const {
-		bucketName,
-		refreshKey = 0,
-		onopenmetadata,
-		oncopyobject,
-		onopendownload
-	}: Props = $props();
+	const { bucketName, refreshKey = 0, onopenmetadata, oncopyobject, onshare }: Props = $props();
 
 	const objects = getObjectsContext();
 	let searchQuery = $state('');
@@ -327,9 +321,9 @@
 								<TableCell class="text-right">
 									<div class="flex items-center justify-end gap-1">
 										<button
-											onclick={() => onopendownload(obj)}
+											onclick={() => onshare(obj)}
 											class="rounded-md p-1.5 text-surface-500 transition-colors hover:bg-surface-800 hover:text-surface-200"
-											aria-label="Copy link"
+											aria-label={`Share ${obj.key}`}
 										>
 											<LinkIcon size={14} />
 										</button>

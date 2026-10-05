@@ -10,10 +10,10 @@
 		metadata: ObjectMetadata | null;
 		isLoading: boolean;
 		onclose: () => void;
-		ondownload: () => void;
+		onshare: () => void;
 	}
 
-	const { open, metadata, isLoading, onclose, ondownload }: Props = $props();
+	const { open, metadata, isLoading, onclose, onshare }: Props = $props();
 </script>
 
 <Modal {open} title="Object Details" {onclose}>
@@ -65,10 +65,10 @@
 			</button>
 			<button
 				type="button"
-				onclick={ondownload}
+				onclick={onshare}
 				class="rounded-lg bg-accent-500/15 px-4 py-2 text-sm font-medium text-accent-400 transition-colors hover:bg-accent-500/25"
 			>
-				Download
+				Share
 			</button>
 		</div>
 	{/if}

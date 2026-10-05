@@ -7,7 +7,7 @@
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import Autocomplete from '$lib/components/Autocomplete.svelte';
-	import type { BucketGrant, CreateBucketGrantRequest } from '$lib/types/api';
+	import type { BucketGrant, CreateBucketGrantRequest, GrantAction } from '$lib/types/api';
 	import { ShieldIcon, UserIcon, Trash2Icon, AlertCircleIcon, SettingsIcon } from 'lucide-svelte';
 
 	interface Props {
@@ -61,7 +61,7 @@
 	});
 
 	let selectedKeyId = $state('');
-	let selectedActions = $state<string[]>([]);
+	let selectedActions = $state<GrantAction[]>([]);
 	let keyPrefix = $state('');
 	let note = $state('');
 	let createError = $state<string | null>(null);
@@ -202,7 +202,7 @@
 			label: 'Abort Multipart (s3:AbortMultipartUpload)',
 			desc: 'Cancel and clean up multipart uploads'
 		}
-	];
+	] satisfies { value: GrantAction; label: string; desc: string }[];
 
 	async function handleCreate(e: Event) {
 		e.preventDefault();
@@ -286,7 +286,8 @@
 		return s3Actions.filter((action) => !group.grants.some((g) => g.action === action.value));
 	};
 
-	async function handleQuickAddAction(group: GroupedGrant, action: string) {
+	async function handleQuickAddAction(group: GroupedGrant, value: string) {
+		const action = s3Actions.find((item) => item.value === value)?.value;
 		if (!action) return;
 		quickAddErrors[group.id] = null;
 
@@ -337,7 +338,7 @@
 		}
 	}
 
-	function toggleActionSelection(action: string) {
+	function toggleActionSelection(action: GrantAction) {
 		if (selectedActions.includes(action)) {
 			selectedActions = selectedActions.filter((a) => a !== action);
 		} else {
