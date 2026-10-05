@@ -18,6 +18,7 @@ import type {
 	ObjectListingV1,
 	ObjectMetadata,
 	PublicObjectUrl,
+	PublicObjectUrlOptions,
 	S3BucketList,
 	ServerConfig,
 	StorageObject,
@@ -29,6 +30,15 @@ import type {
 	CreateBucketGrantRequest,
 	UpdateBucketGrantRequest
 } from '$lib/types/api';
+import type {
+	ActivityAction,
+	CreateShareLinkRequest,
+	GrantAction,
+	ShareLink
+} from '$lib/types/api';
+import { ShareLinksApi } from './share-links';
+import { S3RequestError } from './s3-error';
+import { completeMultipartUpload } from './multipart-completion';
 import { sha256Hex } from '$lib/utils/crypto';
 import {
 	buildCompleteMultipartUploadXml,
@@ -38,8 +48,7 @@ import {
 	parseDeleteObjectsResult,
 	parseInitiateMultipartUploadResult,
 	parseListBuckets,
-	parseListObjectsV1,
-	parseS3ErrorMessage
+	parseListObjectsV1
 } from '$lib/utils/s3-xml';
 
 const DEFAULT_MULTIPART_THRESHOLD_BYTES = 8 * 1024 * 1024;
@@ -53,6 +62,22 @@ const DEFAULT_MULTIPART_CONCURRENCY = 3;
  * while keeping S3-compatible endpoints for bucket creation and object deletion.
  */
 export class FbsApiClient implements FbsClient {
+	private shareLinks = new ShareLinksApi(
+		(path, init) => this.managementFetch(path, init),
+		(res, fallback) => this.throwManagementError(res, fallback)
+	);
+
+	createShareLink(req: CreateShareLinkRequest): Promise<ShareLink> {
+		return this.shareLinks.create(req);
+	}
+
+	listShareLinks(bucket?: string): Promise<ShareLink[]> {
+		return this.shareLinks.list(bucket);
+	}
+
+	deleteShareLink(code: string): Promise<void> {
+		return this.shareLinks.remove(code);
+	}
 	constructor(
 		private baseUrl: string,
 		private token: string
@@ -90,8 +115,7 @@ export class FbsApiClient implements FbsClient {
 	/** Throw a user-friendly error from an S3 XML error response */
 	private async throwS3Error(res: Response, fallback: string): Promise<never> {
 		const text = await res.text().catch(() => '');
-		const msg = parseS3ErrorMessage(text) || `${fallback} (HTTP ${res.status})`;
-		throw new Error(msg);
+		throw new S3RequestError(res.status, text, fallback);
 	}
 
 	private async throwManagementError(res: Response, fallback: string): Promise<never> {
@@ -256,17 +280,16 @@ export class FbsApiClient implements FbsClient {
 	async createPublicObjectUrl(
 		bucket: string,
 		key: string,
-		expiresInSeconds?: number
+		options?: PublicObjectUrlOptions
 	): Promise<PublicObjectUrl> {
-		const payload: { expires_in_seconds?: number } = {};
-		if (expiresInSeconds !== undefined) {
-			payload.expires_in_seconds = expiresInSeconds;
-		}
 		const res = await this.managementFetch(
 			`/buckets/${encodeBucketName(bucket)}/objects/${encodeObjectKeyPath(key)}/public-url`,
 			{
 				method: 'POST',
-				body: JSON.stringify(payload)
+				body: JSON.stringify({
+					expires_in_seconds: options?.expiresInSeconds,
+					response_content_disposition: options?.responseContentDisposition
+				})
 			}
 		);
 
@@ -419,20 +442,22 @@ export class FbsApiClient implements FbsClient {
 			});
 
 			throwIfAborted(options?.signal);
-			report('completing');
-
 			const completeQuery = new URLSearchParams({ uploadId });
-			const completeRes = await this.s3Fetch(`${uploadPath}?${completeQuery.toString()}`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/xml' },
-				body: buildCompleteMultipartUploadXml(
-					uploadedParts.sort((a, b) => a.partNumber - b.partNumber)
-				),
-				signal: options?.signal
-			});
-			if (!completeRes.ok) {
-				await this.throwS3Error(completeRes, 'Failed to complete multipart upload');
-			}
+			const completionBody = buildCompleteMultipartUploadXml(
+				uploadedParts.sort((a, b) => a.partNumber - b.partNumber)
+			);
+			await completeMultipartUpload(async () => {
+				report('completing');
+				const completeRes = await this.s3Fetch(`${uploadPath}?${completeQuery.toString()}`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/xml' },
+					body: completionBody,
+					signal: options?.signal
+				});
+				if (!completeRes.ok) {
+					await this.throwS3Error(completeRes, 'Failed to complete multipart upload');
+				}
+			}, options);
 
 			report('done');
 		} catch (err) {
@@ -535,11 +560,7 @@ export class FbsApiClient implements FbsClient {
 					return;
 				}
 
-				reject(
-					new Error(
-						parseS3ErrorMessage(xhr.responseText) ?? `Failed to upload part (HTTP ${xhr.status})`
-					)
-				);
+				reject(new S3RequestError(xhr.status, xhr.responseText, 'Failed to upload part'));
 			};
 			xhr.onerror = () => {
 				cleanup();
@@ -883,7 +904,7 @@ interface ManagementConfigResponse {
 
 interface ManagementActivityItemResponse {
 	id: string;
-	action: string;
+	action: ActivityAction;
 	bucket: string;
 	key?: string;
 	size?: number;
@@ -1114,7 +1135,7 @@ interface ManagementGrantResponse {
 	id: string;
 	bucket: string;
 	grantee_user_id: string;
-	action: string;
+	action: GrantAction;
 	key_prefix: string;
 	is_active: boolean;
 	created_by?: string;

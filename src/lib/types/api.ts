@@ -97,7 +97,11 @@ export type ActivityAction =
 	| 'delete_bucket'
 	| 'force_delete_bucket'
 	| 'empty_bucket'
-	| string;
+	| 'complete_multipart_upload'
+	| 'transfer_bucket_ownership'
+	| 'create_grant'
+	| 'update_grant'
+	| 'delete_grant';
 
 export interface ActivityItem {
 	id: string;
@@ -163,6 +167,30 @@ export interface PublicObjectUrl {
 	cacheControl: string;
 }
 
+export interface PublicObjectUrlOptions {
+	expiresInSeconds?: number;
+	responseContentDisposition?: string;
+}
+
+export interface ShareLink {
+	code: string;
+	url: string;
+	bucket: string;
+	key: string;
+	responseContentDisposition?: string;
+	createdBy: string;
+	expiresAt: string | null;
+	createdAt: string;
+}
+
+export interface CreateShareLinkRequest {
+	bucket: string;
+	key: string;
+	alias?: string;
+	expiresInSeconds?: number;
+	responseContentDisposition?: string;
+}
+
 export interface CopyObjectRequest {
 	sourceBucket: string;
 	sourceKey: string;
@@ -208,6 +236,7 @@ export interface UploadObjectOptions {
 	multipartThresholdBytes?: number;
 	partSizeBytes?: number;
 	concurrency?: number;
+	onCompletionError?: (error: Error) => Promise<'retry' | 'abort'>;
 }
 
 export interface UploadObjectRequest {
@@ -229,11 +258,22 @@ export interface ObjectMetadata {
 }
 
 // ── Resource Grants (mini-IAM) ──────────────────────────────────────────────
+export const GRANT_ACTIONS = [
+	's3:ListBucket',
+	's3:GetObject',
+	's3:PutObject',
+	's3:DeleteObject',
+	's3:ListMultipartUploadParts',
+	's3:AbortMultipartUpload'
+] as const;
+
+export type GrantAction = (typeof GRANT_ACTIONS)[number];
+
 export interface BucketGrant {
 	id: string;
 	bucket: string;
 	granteeUserId: string;
-	action: string;
+	action: GrantAction;
 	keyPrefix: string;
 	isActive: boolean;
 	createdBy?: string;
@@ -245,7 +285,7 @@ export interface BucketGrant {
 export interface CreateBucketGrantRequest {
 	granteeUserId?: string;
 	granteeAccessKeyId?: string;
-	actions: string[];
+	actions: GrantAction[];
 	keyPrefix: string;
 	note?: string;
 }
@@ -282,8 +322,11 @@ export interface FbsClient {
 	createPublicObjectUrl(
 		bucket: string,
 		key: string,
-		expiresInSeconds?: number
+		options?: PublicObjectUrlOptions
 	): Promise<PublicObjectUrl>;
+	createShareLink(req: CreateShareLinkRequest): Promise<ShareLink>;
+	listShareLinks(bucket?: string): Promise<ShareLink[]>;
+	deleteShareLink(code: string): Promise<void>;
 	uploadObject(req: UploadObjectRequest, options?: UploadObjectOptions): Promise<void>;
 	headObject(bucket: string, key: string): Promise<ObjectMetadata>;
 	// Keys

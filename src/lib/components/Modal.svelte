@@ -33,7 +33,7 @@
 		></button>
 
 		<div
-			class="relative z-10 w-full max-w-lg rounded-xl border border-surface-700 bg-surface-900 p-6 shadow-2xl shadow-black/40"
+			class="relative z-10 max-h-full w-full max-w-lg overflow-y-auto rounded-xl border border-surface-700 bg-surface-900 p-6 shadow-2xl shadow-black/40"
 		>
 			<div class="mb-5">
 				<h2 id="modal-title" class="text-base font-semibold text-surface-100">{title}</h2>

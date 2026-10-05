@@ -47,7 +47,7 @@
 	}
 
 	function activityLabel(action: ActivityAction): string {
-		const labels: Record<string, string> = {
+		const labels: Record<ActivityAction, string> = {
 			put_object: 'Uploaded',
 			delete_object: 'Deleted object',
 			delete_objects: 'Deleted objects',
@@ -55,7 +55,12 @@
 			create_bucket: 'Created bucket',
 			delete_bucket: 'Deleted bucket',
 			force_delete_bucket: 'Deleted bucket',
-			empty_bucket: 'Emptied bucket'
+			empty_bucket: 'Emptied bucket',
+			complete_multipart_upload: 'Completed upload',
+			transfer_bucket_ownership: 'Transferred bucket ownership',
+			create_grant: 'Created grant',
+			update_grant: 'Updated grant',
+			delete_grant: 'Deleted grant'
 		};
 		return labels[action] ?? action.replaceAll('_', ' ');
 	}

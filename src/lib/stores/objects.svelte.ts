@@ -37,6 +37,8 @@ class ObjectsStore {
 	uploadProgress = $state('');
 	uploadPercent = $state(0);
 	uploadAbortController = $state<AbortController | null>(null);
+	completionError = $state<string | null>(null);
+	private resolveCompletion: ((decision: 'retry' | 'abort') => void) | null = null;
 	error = $state<string | null>(null);
 	nextStartAfter = $state<string | null>(null);
 	selectedKeys = $state<string[]>([]);
@@ -305,25 +307,6 @@ class ObjectsStore {
 		}
 	}
 
-	/** Download an object via a short-lived signed public URL */
-	async download(key: string, expiresInSeconds?: number): Promise<boolean> {
-		const client = this.connection.client;
-		if (!client) return false;
-
-		try {
-			const publicUrl = await client.createPublicObjectUrl(
-				this.currentBucket,
-				key,
-				expiresInSeconds
-			);
-			this.openDownload(publicUrl.url, key);
-			return true;
-		} catch (err) {
-			this.error = err instanceof Error ? err.message : 'Failed to create download URL';
-			return false;
-		}
-	}
-
 	/** Upload files to the current bucket/prefix */
 	async upload(files: FileList | File[]): Promise<boolean> {
 		const client = this.connection.client;
@@ -337,6 +320,8 @@ class ObjectsStore {
 		if (fileArray.length === 0) return true;
 
 		const totalBytes = fileArray.reduce((sum, file) => sum + file.size, 0);
+		const bucket = this.currentBucket;
+		const prefix = this.currentPrefix;
 		let completedBytes = 0;
 		let completedFiles = 0;
 		let uploadedAny = false;
@@ -350,12 +335,12 @@ class ObjectsStore {
 		try {
 			for (let i = 0; i < fileArray.length; i++) {
 				const file = fileArray[i];
-				const key = this.currentPrefix + file.name;
+				const key = prefix + file.name;
 				let currentFileLoaded = 0;
 				this.uploadProgress = `Uploading ${i + 1}/${fileArray.length}: ${file.name}`;
 				await client.uploadObject(
 					{
-						bucket: this.currentBucket,
+						bucket,
 						key,
 						body: file,
 						contentType: file.type || 'application/octet-stream',
@@ -363,6 +348,8 @@ class ObjectsStore {
 					},
 					{
 						signal: abortController.signal,
+						onCompletionError: (error) =>
+							this.waitForCompletionDecision(error, abortController.signal),
 						onProgress: (progress) => {
 							currentFileLoaded = Math.min(progress.loadedBytes, file.size);
 							this.uploadPercent = aggregateUploadPercent(
@@ -385,7 +372,8 @@ class ObjectsStore {
 					fileArray.length
 				);
 			}
-			await this.load(this.currentBucket, this.currentPrefix);
+			if (this.currentBucket === bucket && this.currentPrefix === prefix)
+				await this.load(bucket, prefix);
 			return true;
 		} catch (err) {
 			this.error = isAbortError(err)
@@ -393,8 +381,8 @@ class ObjectsStore {
 				: err instanceof Error
 					? err.message
 					: 'Failed to upload file(s)';
-			if (uploadedAny) {
-				await this.load(this.currentBucket, this.currentPrefix);
+			if (uploadedAny && this.currentBucket === bucket && this.currentPrefix === prefix) {
+				await this.load(bucket, prefix);
 			}
 			return false;
 		} finally {
@@ -402,7 +390,28 @@ class ObjectsStore {
 			this.uploadProgress = '';
 			this.uploadPercent = 0;
 			this.uploadAbortController = null;
+			this.resolveCompletion?.('abort');
 		}
+	}
+
+	private waitForCompletionDecision(error: Error, signal: AbortSignal): Promise<'retry' | 'abort'> {
+		if (signal.aborted) return Promise.resolve('abort');
+		this.completionError = error.message;
+		return new Promise((resolve) => {
+			const settle = (decision: 'retry' | 'abort') => {
+				signal.removeEventListener('abort', abort);
+				this.resolveCompletion = null;
+				this.completionError = null;
+				resolve(decision);
+			};
+			const abort = () => settle('abort');
+			this.resolveCompletion = settle;
+			signal.addEventListener('abort', abort, { once: true });
+		});
+	}
+
+	retryCompletion(): void {
+		this.resolveCompletion?.('retry');
 	}
 
 	cancelUpload(): void {
@@ -450,17 +459,6 @@ class ObjectsStore {
 
 	selectVisible(): void {
 		this.selectedKeys = this.items.map((object) => object.key);
-	}
-
-	private openDownload(url: string, key: string): void {
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = key.split('/').pop() ?? key;
-		a.target = '_blank';
-		a.rel = 'noopener';
-		document.body.appendChild(a);
-		a.click();
-		document.body.removeChild(a);
 	}
 
 	/** Navigate into a folder (prefix). No-ops if already there. */

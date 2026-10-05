@@ -6,12 +6,13 @@
 	import CopyObjectModal from '$lib/components/CopyObjectModal.svelte';
 	import ObjectBrowser from '$lib/components/object-browser/ObjectBrowser.svelte';
 	import ObjectMetadataModal from '$lib/components/ObjectMetadataModal.svelte';
-	import DownloadOptionsModal from '$lib/components/DownloadOptionsModal.svelte';
+	import ShareObjectModal from '$lib/components/ShareObjectModal.svelte';
+	import BucketShareLinks from '$lib/components/BucketShareLinks.svelte';
+	import BucketTabs from '$lib/components/BucketTabs.svelte';
 	import BucketGrants from '$lib/components/BucketGrants.svelte';
 	import { getBucketsContext } from '$lib/stores/buckets.svelte';
 	import { getObjectsContext } from '$lib/stores/objects.svelte';
 	import { getPageActionsContext } from '$lib/stores/page-actions.svelte';
-	import { getConnectionContext } from '$lib/stores/connection.svelte';
 	import type { ObjectMetadata, StorageObject } from '$lib/types/api';
 	import { formatBytes, formatDate } from '$lib/utils/format';
 	import {
@@ -27,7 +28,6 @@
 	const buckets = getBucketsContext();
 	const objects = getObjectsContext();
 	const pageActions = getPageActionsContext();
-	const connection = getConnectionContext();
 	const bucketName = $derived(page.params.bucket ?? '');
 	const selectedCount = $derived(objects.selectedKeys.length);
 	const bucketSummary = $derived(buckets.selected?.name === bucketName ? buckets.selected : null);
@@ -35,7 +35,11 @@
 	const summaryBytes = $derived(bucketSummary?.totalObjectBytes ?? 0);
 
 	const activeTab = $derived(
-		page.url.searchParams.get('tab') === 'permissions' ? 'permissions' : 'objects'
+		page.url.searchParams.get('tab') === 'permissions'
+			? 'permissions'
+			: page.url.searchParams.get('tab') === 'share-links'
+				? 'share-links'
+				: 'objects'
 	);
 	let showCreateModal = $state(false);
 	let deleteBucketOpen = $state(false);
@@ -51,7 +55,7 @@
 	let metadataResult = $state<ObjectMetadata | null>(null);
 	let isLoadingMetadata = $state(false);
 
-	let downloadTarget = $state<StorageObject | null>(null);
+	let shareTarget = $state<StorageObject | null>(null);
 
 	let fileInput: HTMLInputElement | undefined = $state();
 	let isDragging = $state(false);
@@ -73,6 +77,7 @@
 
 	onDestroy(() => {
 		pageActions.clearActions();
+		objects.cancelUpload();
 	});
 
 	async function handleDeleteSelected() {
@@ -154,20 +159,6 @@
 		isLoadingMetadata = false;
 	}
 
-	function closeDownloadModal() {
-		downloadTarget = null;
-	}
-
-	async function handleGenerateLink(expiresIn: number): Promise<string> {
-		const target = downloadTarget || metadataTarget;
-		if (!target || !bucketName) return '';
-		const client = connection.client;
-		if (!client) return '';
-
-		const publicUrl = await client.createPublicObjectUrl(bucketName, target.key, expiresIn);
-		return publicUrl.url;
-	}
-
 	function triggerUpload() {
 		fileInput?.click();
 	}
@@ -210,7 +201,7 @@
 {#snippet topBarActions()}
 	<!-- Compact Stats (formerly the 3 cards) -->
 	{#if bucketSummary}
-		<div class="hidden items-center gap-4 border-r border-surface-800 pr-4 text-xs md:flex">
+		<div class="hidden items-center gap-4 border-r border-surface-800 pr-4 text-xs 2xl:flex">
 			<div class="flex items-center gap-1.5">
 				<FolderIcon size={14} class="text-accent-400" />
 				<span class="text-surface-500">Objects:</span>
@@ -263,7 +254,7 @@
 		{/if}
 		<button
 			onclick={() => (deleteBucketOpen = true)}
-			class="rounded-lg bg-danger-500/15 px-3.5 py-1.5 text-sm font-medium text-danger-400 transition-colors hover:bg-danger-500/25"
+			class="rounded-lg bg-danger-500/15 px-3.5 py-1.5 text-sm font-medium whitespace-nowrap text-danger-400 transition-colors hover:bg-danger-500/25"
 		>
 			Delete Bucket
 		</button>
@@ -273,6 +264,7 @@
 <svelte:head><title>{bucketName} — FBS</title></svelte:head>
 
 <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+	<BucketTabs {activeTab} {bucketName} />
 	{#if objects.error}
 		<div
 			class="shrink-0 rounded-xl border border-danger-500/20 bg-danger-500/5 p-4 text-sm text-danger-400"
@@ -316,6 +308,29 @@
 			</div>
 		</div>
 	{/if}
+	{#if objects.completionError}
+		<div
+			role="alert"
+			class="shrink-0 space-y-2 rounded-xl border border-danger-500/20 bg-danger-500/5 p-4"
+		>
+			<p class="text-sm text-danger-400">Upload completion failed: {objects.completionError}</p>
+			<p class="text-xs text-surface-400">
+				Retry completion using the uploaded parts, or cancel to discard this upload.
+			</p>
+			<div class="flex flex-wrap gap-2">
+				<button
+					onclick={() => objects.retryCompletion()}
+					class="rounded-lg bg-accent-500/15 px-3 py-2 text-sm text-accent-400"
+					>Retry completion</button
+				>
+				<button
+					onclick={() => objects.cancelUpload()}
+					class="rounded-lg bg-danger-500/15 px-3 py-2 text-sm text-danger-400"
+					>Cancel upload</button
+				>
+			</div>
+		</div>
+	{/if}
 
 	{#if activeTab === 'objects'}
 		<div
@@ -346,7 +361,7 @@
 					refreshKey={browserRefreshKey}
 					onopenmetadata={openMetadataModal}
 					oncopyobject={openCopyModal}
-					onopendownload={(obj) => (downloadTarget = obj)}
+					onshare={(obj) => (shareTarget = obj)}
 				/>
 			{/if}
 		</div>
@@ -354,6 +369,8 @@
 		<div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
 			<BucketGrants {bucketName} bind:showCreateModal />
 		</div>
+	{:else if activeTab === 'share-links'}
+		{#key bucketName}<BucketShareLinks {bucketName} />{/key}
 	{/if}
 </div>
 
@@ -364,20 +381,19 @@
 	metadata={metadataResult}
 	isLoading={isLoadingMetadata}
 	onclose={closeMetadataModal}
-	ondownload={() => {
+	onshare={() => {
 		if (metadataResult) {
-			downloadTarget = metadataTarget;
+			shareTarget = metadataTarget;
 		}
 		closeMetadataModal();
 	}}
 />
 
-<DownloadOptionsModal
-	open={downloadTarget !== null}
-	object={downloadTarget}
-	onclose={closeDownloadModal}
-	ongeneratelink={handleGenerateLink}
-/>
+{#if shareTarget}
+	{#key `${shareTarget.bucketName}/${shareTarget.key}`}
+		<ShareObjectModal object={shareTarget} onclose={() => (shareTarget = null)} />
+	{/key}
+{/if}
 
 <CopyObjectModal
 	open={copyTarget !== null}
